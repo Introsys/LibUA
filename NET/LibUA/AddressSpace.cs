@@ -192,6 +192,22 @@ namespace LibUA
 				if (other is NodeId) { return Equals(other as NodeId); }
 				return false;
 			}
+
+			public object GetIdentifier()
+            {
+				if (ByteStringIdentifier != null)
+                {
+					return ByteStringIdentifier;
+				}
+				else if (StringIdentifier != null)
+                {
+					return StringIdentifier;
+				}
+                else
+                {
+					return NumericIdentifier;
+				}
+			}
 		}
 
 		public interface IDataSource
