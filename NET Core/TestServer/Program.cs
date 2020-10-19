@@ -70,6 +70,15 @@ namespace TestServer
 					new NodeId(UAConst.ObjectsFolder), true));
 				AddressSpaceTable.TryAdd(ItemsRoot.Id, ItemsRoot);
 
+				(AddressSpaceTable[new NodeId(UAConst.OperationLimitsType_MaxNodesPerRead)] as NodeVariable).Value = 100;
+				(AddressSpaceTable[new NodeId(UAConst.OperationLimitsType_MaxNodesPerWrite)] as NodeVariable).Value = 100;
+				(AddressSpaceTable[new NodeId(UAConst.OperationLimitsType_MaxNodesPerMethodCall)] as NodeVariable).Value = 100;
+				(AddressSpaceTable[new NodeId(UAConst.OperationLimitsType_MaxNodesPerBrowse)] as NodeVariable).Value = 100;
+				(AddressSpaceTable[new NodeId(UAConst.OperationLimitsType_MaxNodesPerRegisterNodes)] as NodeVariable).Value = 100;
+				(AddressSpaceTable[new NodeId(UAConst.OperationLimitsType_MaxNodesPerTranslateBrowsePathsToNodeIds)] as NodeVariable).Value = 100;
+				(AddressSpaceTable[new NodeId(UAConst.OperationLimitsType_MaxNodesPerNodeManagement)] as NodeVariable).Value = 100;
+				(AddressSpaceTable[new NodeId(UAConst.OperationLimitsType_MaxMonitoredItemsPerCall)] as NodeVariable).Value = 100;
+
 				TrendNodes = new NodeVariable[1000];
 				var nodeTypeFloat = new NodeId(0, 10);
 				for (int i = 0; i < TrendNodes.Length; i++)
@@ -88,7 +97,8 @@ namespace TestServer
 
 			public override object SessionCreate(SessionCreationInfo sessionInfo)
 			{
-				// Create and return a session object with sessionInfo
+				// Optionally create and return a session object with sessionInfo if you want to track that same object
+				// when the client validates its session (anonymous, username + password or certificate).
 
 				return null;
 			}
@@ -295,13 +305,13 @@ namespace TestServer
 			{
 				return new EventNotification(new EventNotification.Field[]
 				{
-                    // During publishing, operand BrowsePaths are matched
-                    // against UA select clauses from the subscriber.
-                    // The operands shown here are the most common requested (90% of cases).
-                    // Types match operand BrowsePath, do not change them and remember
-                    // casting when passing into a variant.
+					// During publishing, operand BrowsePaths are matched
+					// against UA select clauses from the subscriber.
+					// The operands shown here are the most common requested (90% of cases).
+					// Types match operand BrowsePath, do not change them and remember
+					// casting when passing into a variant.
 
-                    new EventNotification.Field()
+					new EventNotification.Field()
 					{
 						Operand = new SimpleAttributeOperand(
 							new[] {new QualifiedName("EventId")}
@@ -341,12 +351,12 @@ namespace TestServer
 						Operand = new SimpleAttributeOperand(
 							new[] {new QualifiedName("Severity")}
 						),
-                        // Severity is 0 to 1000
-                        Value = (UInt16) (rnd.Next() % 1000)
+						// Severity is 0 to 1000
+						Value = (UInt16) (rnd.Next() % 1000)
 					},
-                    // ActiveState object is a name, Id gives the value specified by the name
-                    // The names do not mean anything (just display text), but Id is important
-                    new EventNotification.Field()
+					// ActiveState object is a name, Id gives the value specified by the name
+					// The names do not mean anything (just display text), but Id is important
+					new EventNotification.Field()
 					{
 						Operand = new SimpleAttributeOperand(
 							new[] {new QualifiedName("ActiveState")}
@@ -356,11 +366,11 @@ namespace TestServer
 					new EventNotification.Field()
 					{
 						Operand = new SimpleAttributeOperand(
-                            // Represents ActiveState.Id
-                            new[] {new QualifiedName("ActiveState"), new QualifiedName("Id")}
+							// Represents ActiveState.Id
+							new[] {new QualifiedName("ActiveState"), new QualifiedName("Id")}
 						),
-                        // Inactive specifies false, Active specifies true
-                        Value = true
+						// Inactive specifies false, Active specifies true
+						Value = true
 					},
 					new EventNotification.Field()
 					{
@@ -369,8 +379,8 @@ namespace TestServer
 						),
 						Value = new LocalizedText("Alarm active")
 					},
-                    // Same rules for AckedState
-                    new EventNotification.Field()
+					// Same rules for AckedState
+					new EventNotification.Field()
 					{
 						Operand = new SimpleAttributeOperand(
 							new[] {new QualifiedName("AckedState")}
@@ -380,11 +390,11 @@ namespace TestServer
 					new EventNotification.Field()
 					{
 						Operand = new SimpleAttributeOperand(
-                            // Represents AckedState.Id
-                            new[] {new QualifiedName("AckedState"), new QualifiedName("Id")}
+							// Represents AckedState.Id
+							new[] {new QualifiedName("AckedState"), new QualifiedName("Id")}
 						),
-                        // Inactive specifies false, Active specifies true
-                        Value = true,
+						// Inactive specifies false, Active specifies true
+						Value = true,
 					},
 					new EventNotification.Field()
 					{
@@ -400,8 +410,8 @@ namespace TestServer
 						),
 						Value = "Sample alarm"
 					},
-                    // Necessary field for alarms
-                    new EventNotification.Field()
+					// Necessary field for alarms
+					new EventNotification.Field()
 					{
 						Operand = new SimpleAttributeOperand(
 							NodeId.Zero, new[] {new QualifiedName("ConditionType")},

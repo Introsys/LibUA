@@ -5293,6 +5293,15 @@ namespace LibUA
 			DiscoveryServer = 3,
 		}
 
+		public enum ValueRank
+		{
+			OneOrMoreDimensions = 0,
+			OneDimension = 1,
+			Scalar = -1,
+			Any = -2,
+			ScalarOrOneDimension = -3
+		}
+
 		[Flags]
 		public enum AttributeWriteMask
 		{
@@ -5501,6 +5510,11 @@ namespace LibUA
 			Historizing = 20,
 			Executable = 21,
 			UserExecutable = 22,
+			DataTypeDefinition = 23,
+			RolePermissions = 24,
+			UserRolePermissions = 25,
+			AccessRestrictions = 26,
+			AccessLevelEx = 27,
 		}
 
 		[Flags]
@@ -5570,7 +5584,7 @@ namespace LibUA
 			//FourByte,
 			Numeric,
 			String,
-			//Guid,
+			Guid,
 			ByteString,
 		}
 
@@ -5724,13 +5738,13 @@ namespace LibUA
 			public QualifiedName(string Name)
 			{
 				this.NamespaceIndex = 0;
-				this.Name = Name ?? string.Empty;
+				this.Name = Name;
 			}
 
 			public QualifiedName(ushort NamespaceIndex, string Name)
 			{
 				this.NamespaceIndex = NamespaceIndex;
-				this.Name = Name ?? string.Empty;
+				this.Name = Name;
 			}
 
 			public override bool Equals(object obj)
@@ -5750,7 +5764,7 @@ namespace LibUA
 
 			public override string ToString()
 			{
-				return string.Format("[{0}] {1}", NamespaceIndex, Name);
+				return string.Format("[{0}] {1}", NamespaceIndex, Name ?? "");
 			}
 		}
 

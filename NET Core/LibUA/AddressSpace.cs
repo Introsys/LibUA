@@ -109,11 +109,11 @@ namespace LibUA
 				this.IdType = NodeIdNetType.String;
 			}
 
-			public NodeId(UInt16 NamespaceIndex, byte[] ByteStringIdentifier)
+			public NodeId(UInt16 NamespaceIndex, byte[] ByteStringIdentifier, NodeIdNetType IdType)
 			{
 				this.NamespaceIndex = NamespaceIndex;
 				this.ByteStringIdentifier = ByteStringIdentifier;
-				this.IdType = NodeIdNetType.ByteString;
+				this.IdType = IdType;
 			}
 
 			public override string ToString()
@@ -125,6 +125,10 @@ namespace LibUA
 				else if (IdType == NodeIdNetType.ByteString)
 				{
 					return string.Format("ns={0};bs=0x{1}", NamespaceIndex, string.Join("", ByteStringIdentifier.Select(v => v.ToString("X2"))));
+				}
+				else if (IdType == NodeIdNetType.Guid)
+				{
+					return string.Format("ns={0};guid=0x{1}", NamespaceIndex, string.Join("", ByteStringIdentifier.Select(v => v.ToString("X2"))));
 				}
 
 				return string.Format("ns={0};i={1}", NamespaceIndex, NumericIdentifier);
@@ -140,7 +144,7 @@ namespace LibUA
 				{
 					res ^= (uint)NumericIdentifier;
 				}
-				else if (IdType == NodeIdNetType.ByteString)
+				else if (IdType == NodeIdNetType.ByteString || IdType == NodeIdNetType.Guid)
 				{
 					for (int i = 0; i < ByteStringIdentifier.Length; i++)
 					{
@@ -276,7 +280,7 @@ namespace LibUA
 			}
 
 			public NodeObject(NodeId Id, QualifiedName BrowseName, LocalizedText DisplayName, LocalizedText Description, UInt32 WriteMask, UInt32 UserWriteMask, byte EventNotifier)
-				: base(Id, NodeClass.Object, BrowseName, DisplayName, Description, WriteMask, UserWriteMask)
+				: base(Id, NodeClass.ObjectType, BrowseName, DisplayName, Description, WriteMask, UserWriteMask)
 			{
 				this.EventNotifier = EventNotifier;
 			}
@@ -290,7 +294,7 @@ namespace LibUA
 			}
 
 			public NodeObjectType(NodeId Id, QualifiedName BrowseName, LocalizedText DisplayName, LocalizedText Description, UInt32 WriteMask, UInt32 UserWriteMask, bool IsAbstract)
-				: base(Id, NodeClass.Object, BrowseName, DisplayName, Description, WriteMask, UserWriteMask)
+				: base(Id, NodeClass.ObjectType, BrowseName, DisplayName, Description, WriteMask, UserWriteMask)
 			{
 				this.IsAbstract = IsAbstract;
 			}
@@ -300,7 +304,7 @@ namespace LibUA
 		{
 			public object Value
 			{
-				get; protected set;
+				get; set;
 			}
 
 			public NodeId DataType
@@ -328,11 +332,17 @@ namespace LibUA
 				get; protected set;
 			}
 
+			public int ValueRank
+			{
+				get; protected set;
+			}
+
 			public NodeVariable(NodeId Id, QualifiedName BrowseName, LocalizedText DisplayName, LocalizedText Description, UInt32 WriteMask, UInt32 UserWriteMask, Core.AccessLevel AccessLevel, Core.AccessLevel UserAccessLevel, double MinimumResamplingInterval, bool IsHistorizing, NodeId DataType)
-				: base(Id, NodeClass.Object, BrowseName, DisplayName, Description, WriteMask, UserWriteMask)
+				: base(Id, NodeClass.ObjectType, BrowseName, DisplayName, Description, WriteMask, UserWriteMask)
 			{
 				this.Value = null;
 				this.DataType = DataType;
+				this.ValueRank = (int)Core.ValueRank.Scalar;
 
 				this.AccessLevel = AccessLevel;
 				this.UserAccessLevel = UserAccessLevel;
@@ -359,7 +369,7 @@ namespace LibUA
 			}
 
 			public NodeVariableType(NodeId Id, QualifiedName BrowseName, LocalizedText DisplayName, LocalizedText Description, UInt32 WriteMask, UInt32 UserWriteMask, bool IsAbstract)
-				: base(Id, NodeClass.Object, BrowseName, DisplayName, Description, WriteMask, UserWriteMask)
+				: base(Id, NodeClass.ObjectType, BrowseName, DisplayName, Description, WriteMask, UserWriteMask)
 			{
 				this.IsAbstract = IsAbstract;
 			}
@@ -383,7 +393,7 @@ namespace LibUA
 			}
 
 			public NodeReferenceType(NodeId Id, QualifiedName BrowseName, LocalizedText DisplayName, LocalizedText Description, UInt32 WriteMask, UInt32 UserWriteMask, bool IsAbstract, bool IsSymmetric, LocalizedText InverseName)
-				: base(Id, NodeClass.Object, BrowseName, DisplayName, Description, WriteMask, UserWriteMask)
+				: base(Id, NodeClass.ObjectType, BrowseName, DisplayName, Description, WriteMask, UserWriteMask)
 			{
 				this.IsAbstract = IsAbstract;
 				this.IsSymmetric = IsSymmetric;
@@ -404,7 +414,7 @@ namespace LibUA
 			}
 
 			public NodeMethod(NodeId Id, QualifiedName BrowseName, LocalizedText DisplayName, LocalizedText Description, UInt32 WriteMask, UInt32 UserWriteMask, bool IsExecutable, bool IsUserExecutable)
-				: base(Id, NodeClass.Object, BrowseName, DisplayName, Description, WriteMask, UserWriteMask)
+				: base(Id, NodeClass.ObjectType, BrowseName, DisplayName, Description, WriteMask, UserWriteMask)
 			{
 				this.IsExecutable = IsExecutable;
 				this.IsUserExecutable = IsUserExecutable;
@@ -424,7 +434,7 @@ namespace LibUA
 			}
 
 			public NodeView(NodeId Id, QualifiedName BrowseName, LocalizedText DisplayName, LocalizedText Description, UInt32 WriteMask, UInt32 UserWriteMask, bool ContainsNoLoops, byte EventNotifier)
-				: base(Id, NodeClass.Object, BrowseName, DisplayName, Description, WriteMask, UserWriteMask)
+				: base(Id, NodeClass.ObjectType, BrowseName, DisplayName, Description, WriteMask, UserWriteMask)
 			{
 				this.ContainsNoLoops = ContainsNoLoops;
 				this.EventNotifier = EventNotifier;
@@ -439,7 +449,7 @@ namespace LibUA
 			}
 
 			public NodeDataType(NodeId Id, QualifiedName BrowseName, LocalizedText DisplayName, LocalizedText Description, UInt32 WriteMask, UInt32 UserWriteMask, bool IsAbstract)
-				: base(Id, NodeClass.Object, BrowseName, DisplayName, Description, WriteMask, UserWriteMask)
+				: base(Id, NodeClass.ObjectType, BrowseName, DisplayName, Description, WriteMask, UserWriteMask)
 			{
 				this.IsAbstract = IsAbstract;
 			}
