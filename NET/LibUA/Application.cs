@@ -93,6 +93,7 @@ namespace LibUA
 
 			public Application()
 			{
+				MethodMap = new Dictionary<NodeId, MethodCallHandler>();
 				AddressSpaceTable = new ConcurrentDictionary<NodeId, Node>();
 
 				SetupDefaultAddressSpace();
