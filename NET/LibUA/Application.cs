@@ -265,14 +265,12 @@ namespace LibUA
                 return new List<Core.EndpointDescription>();
             }
 
-            protected virtual DataValue HandleReadRequestInternal(NodeId id)
+            protected virtual DataValue HandleReadRequestInternal(NodeId id)   
             {
-                object value;
-                if (internalAddressSpaceValues.TryGetValue(id, out value))
+                if (internalAddressSpaceValues.TryGetValue(id, out object value))
                 {
                     return new DataValue(value, StatusCode.Good);
                 }
-
                 else if (AddressSpaceTable.TryGetValue(id, out Node node) && node is NodeVariable nv)
                 {
                     DataValue temp = (DataValue)nv.Value;
