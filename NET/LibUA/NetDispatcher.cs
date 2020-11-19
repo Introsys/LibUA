@@ -2802,15 +2802,24 @@ namespace LibUA
 				for (uint i = 0; i < NoofMethodsToCall; i++)
 				{
 					app.MethodMap.TryGetValue(reqs[i].MethodId, out Application.MethodCallHandler mch);
-					mch?.Invoke(config.Session, reqs[i]);
+					DataValue[] resp = mch?.Invoke(config.Session, reqs[i]);
 
 					succeeded &= respBuf.Encode((UInt32)StatusCode.Good);
 					// InputArgumentResults: Array of StatusCode
 					succeeded &= respBuf.Encode((UInt32)0);
-					// InputArgumentDiagnosticInfos
 					succeeded &= respBuf.Encode((UInt32)0);
+					succeeded &= respBuf.Encode((UInt32)0);
+					/*
 					// OutputArguments: Array of Variant
-					succeeded &= respBuf.Encode((UInt32)0);
+					foreach (DataValue dv in resp)
+					{
+						succeeded &= respBuf.Encode((uint)dv.StatusCode);
+						succeeded &= respBuf.Encode(dv);
+					}
+					
+					//succeeded &= respBuf.Encode((UInt32)0);
+					//succeeded &= respBuf.Encode((UInt32)0);
+					*/
 				}
 
 				// DiagnosticInfos

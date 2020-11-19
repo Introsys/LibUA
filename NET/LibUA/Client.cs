@@ -2034,7 +2034,9 @@ namespace LibUA
 					return sendRes;
 				}
 
-				bool signalled = recvEv.WaitOne(Timeout * 1000);
+				//bool signalled = recvEv.WaitOne(Timeout * 1000);
+				//MEGA MARTELO!!!! ANTES FUNCIONAVA!!!!
+				bool signalled = recvEv.WaitOne(3 * 1000);
 
 				lock (recvNotify)
 				{
