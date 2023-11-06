@@ -2842,6 +2842,29 @@ namespace LibUA
 				succeeded &= respBuf.Encode((UInt32)NoofMethodsToCall);
 				for (uint i = 0; i < NoofMethodsToCall; i++)
 				{
+					CallMethodResult cmr = app.HandleCallMethodResult(reqs[i]);
+					if (cmr != null)
+					{
+						// Status
+						succeeded &= respBuf.Encode((UInt32)cmr.StatusCode);
+						// InputArgumentResults: Array of StatusCode
+						var resultsCount = cmr.Results?.Length ?? 0;
+						succeeded &= respBuf.Encode((UInt32)resultsCount);
+						if (resultsCount != 0)
+							foreach (var result in cmr.Results)
+								succeeded &= respBuf.Encode(result);
+						// InputArgumentDiagnosticInfos
+						succeeded &= respBuf.Encode((UInt32)0);
+						// OutputArguments: Array of Variant
+						var outputCount = cmr.Outputs?.Length ?? 0;
+						succeeded &= respBuf.Encode((UInt32)outputCount);
+						if (outputCount != 0)
+							foreach (var output in cmr.Outputs)
+								succeeded &= respBuf.VariantEncode(output);
+					}
+					else
+					{
+						// Status
 					succeeded &= respBuf.Encode((UInt32)StatusCode.Good);
 					// InputArgumentResults: Array of StatusCode
 					succeeded &= respBuf.Encode((UInt32)0);
@@ -2849,6 +2872,7 @@ namespace LibUA
 					succeeded &= respBuf.Encode((UInt32)0);
 					// OutputArguments: Array of Variant
 					succeeded &= respBuf.Encode((UInt32)0);
+				}
 				}
 
 				// DiagnosticInfos

@@ -262,6 +262,11 @@ namespace LibUA
 				return new DataValue(null, StatusCode.Good);
 			}
 
+			public virtual CallMethodResult HandleCallMethodResult(CallMethodRequest callMethodRequest)
+			{
+				return null;
+			}
+
 			void SetupInternalAddressSpace()
 			{
 				internalAddressSpaceNodes = new HashSet<NodeId>();

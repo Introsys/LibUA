@@ -14,6 +14,15 @@ namespace LibUA
 		public static class Types
 		{
 			public static bool StatusCodeIsGood(uint code) { return (code & 0xC0000000) == 0; }
+
+			public static bool StatusCodeIsGood(uint? code) 
+			{
+				if (code == null)
+					return false;
+				return StatusCodeIsGood(code.Value);
+            }
+
+			public static bool StatusCodeIsGood(StatusCode code) => StatusCodeIsGood((uint)code);
 			public static bool StatusCodeIsUncertain(uint code) { return (code & 0x40000000) != 0; }
 			public static bool StatusCodeIsBad(uint code) { return (code & 0x80000000) != 0; }
 
@@ -6193,6 +6202,11 @@ namespace LibUA
 			public UInt32[] Results { get; protected set; }
 			public object[] Outputs { get; protected set; }
 
+            public CallMethodResult(StatusCode StatusCode, UInt32[] Results, object[] Outputs) : this((UInt32)StatusCode, Results, Outputs)
+			{
+
+			}
+
 			public CallMethodResult(UInt32 StatusCode, UInt32[] Results, object[] Outputs)
 			{
 				this.StatusCode = StatusCode;
@@ -6790,7 +6804,7 @@ namespace LibUA
 
 				this.QueueData = new ConcurrentQueue<DataValue>();
 				this.QueueEvent = new ConcurrentQueue<EventNotification>();
-
+				
 				QueueOverflowed = false;
 			}
 		}

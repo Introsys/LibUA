@@ -712,7 +712,8 @@ namespace LibUA
 				if (type == typeof(LocalizedText)) { return VariantType.LocalizedText; }
 				if (type == typeof(DateTime)) { return VariantType.DateTime; }
 				if (type == typeof(StatusCode)) { return VariantType.StatusCode; }
-
+				if (type == typeof(ExtensionObject)) { return VariantType.ExtensionObject; }
+				
 				// TODO: Other types
 
 				return VariantType.Null;
@@ -739,6 +740,7 @@ namespace LibUA
 				if (obj is LocalizedText) { return VariantType.LocalizedText; }
 				if (obj is DateTime) { return VariantType.DateTime; }
 				if (obj is StatusCode) { return VariantType.StatusCode; }
+				if (obj is ExtensionObject) { return VariantType.ExtensionObject; }
 
 				// TODO: Other types
 
@@ -762,6 +764,7 @@ namespace LibUA
 				if (type == VariantType.QualifiedName) { return typeof(QualifiedName); }
 				if (type == VariantType.LocalizedText) { return typeof(LocalizedText); }
 				if (type == VariantType.String) { return typeof(String); }
+				if (type == VariantType.ExtensionObject) { return typeof(ExtensionObject); }
 
 				// TODO: Other types
 
