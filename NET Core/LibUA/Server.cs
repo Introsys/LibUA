@@ -29,7 +29,7 @@ namespace LibUA
 			ManualResetEvent listenerAbort = null;
 			Semaphore listenerAvailable = null;
 
-			List<NetDispatcherBase> dispatchers = null;
+			internal List<NetDispatcherBase> dispatchers = null;
 			object dispatchersLock = new object();
 
 			public Master(Application App, int Port, int Timeout, int Backlog, int MaxClients, ILogger logger, int MaximumMessageSize = 1 << 20)
@@ -531,7 +531,7 @@ namespace LibUA
 				return false;
 			}
 
-			virtual protected bool Pulse()
+			virtual internal bool Pulse()
 			{
 				return false;
 			}

@@ -24,14 +24,14 @@ namespace LibUA
 
 		public const int ListenerInterval = 100;
 
-		public readonly string Target;
-		public readonly int Port;
-		public readonly string Path;
+		protected string Target;
+		protected int Port;
+		protected string Path;
 
-		public readonly int Timeout;
+		protected int Timeout;
 
 		protected SLChannel config = null;
-		int MaximumMessageSize;
+		protected int MaximumMessageSize;
 
 		Semaphore cs = null;
 		Semaphore csDispatching = null;
@@ -62,12 +62,12 @@ namespace LibUA
 		bool nextPublish = false;
 		HashSet<uint> publishReqs = null;
 
-		public virtual X509Certificate2 ApplicationCertificate
+		internal virtual X509Certificate2 ApplicationCertificate
 		{
 			get { return null; }
 		}
 
-		public virtual RSACng ApplicationPrivateKey
+        internal virtual RSACng ApplicationPrivateKey
 		{
 			get { return null; }
 		}
@@ -1044,7 +1044,7 @@ namespace LibUA
 			Disconnect();
 		}
 
-		public StatusCode Disconnect()
+		internal StatusCode Disconnect()
 		{
 			nextPublish = false;
 
@@ -2076,7 +2076,7 @@ namespace LibUA
 			}
 		}
 
-		public StatusCode Read(ReadValueId[] Ids, out DataValue[] results)
+		internal StatusCode Read(ReadValueId[] Ids, out DataValue[] results)
 		{
 			results = null;
 
@@ -3436,7 +3436,7 @@ namespace LibUA
 			}
 		}
 
-		public StatusCode Call(CallMethodRequest[] requests, out CallMethodResult[] results)
+		internal StatusCode Call(CallMethodRequest[] requests, out CallMethodResult[] results)
 		{
 			results = null;
 
@@ -3584,7 +3584,7 @@ namespace LibUA
 			}
 		}
 
-		public StatusCode CreateSubscription(double RequestedPublishingInterval, UInt32 MaxNotificationsPerPublish, bool PublishingEnabled, byte Priority, out uint result)
+		internal StatusCode CreateSubscription(double RequestedPublishingInterval, UInt32 MaxNotificationsPerPublish, bool PublishingEnabled, byte Priority, out uint result)
 		{
 			result = 0xFFFFFFFFu;
 
@@ -3994,7 +3994,7 @@ namespace LibUA
 			}
 		}
 
-		public StatusCode CreateMonitoredItems(uint subscriptionId, TimestampsToReturn timestampsToReturn, MonitoredItemCreateRequest[] requests, out MonitoredItemCreateResult[] results)
+		internal StatusCode CreateMonitoredItems(uint subscriptionId, TimestampsToReturn timestampsToReturn, MonitoredItemCreateRequest[] requests, out MonitoredItemCreateResult[] results)
 		{
 			results = null;
 
@@ -4408,11 +4408,11 @@ namespace LibUA
 			//}
 		}
 
-		public virtual void NotifyEventNotifications(uint subscrId, uint[] clientHandles, object[][] notifications)
+		internal virtual void NotifyEventNotifications(uint subscrId, uint[] clientHandles, object[][] notifications)
 		{
 		}
 
-		public virtual void NotifyDataChangeNotifications(uint subscrId, uint[] clientHandles, DataValue[] notifications)
+		internal virtual void NotifyDataChangeNotifications(uint subscrId, uint[] clientHandles, DataValue[] notifications)
 		{
 		}
 

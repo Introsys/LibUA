@@ -14,7 +14,7 @@ namespace LibUA
 
 			public UInt16 NamespaceIndex
 			{
-				get; protected set;
+				get; internal set;
 			}
 
 			public UInt32 NumericIdentifier
@@ -29,7 +29,7 @@ namespace LibUA
 
 			public string StringIdentifier
 			{
-				get; protected set;
+				get; internal set;
 			}
 
 			public NodeIdNetType IdType
@@ -243,27 +243,27 @@ namespace LibUA
 
 			public QualifiedName BrowseName
 			{
-				get; protected set;
+				get; internal set;
 			}
 
 			public LocalizedText DisplayName
 			{
-				get; protected set;
+				get; internal set;
 			}
 
 			public LocalizedText Description
 			{
-				get; protected set;
+				get; internal set;
 			}
 
 			public UInt32 WriteMask
 			{
-				get; protected set;
+				get; internal set;
 			}
 
 			public UInt32 UserWriteMask
 			{
-				get; protected set;
+				get; internal set;
 			}
 
 			public Node(NodeId Id, NodeClass Class, QualifiedName BrowseName, LocalizedText DisplayName, LocalizedText Description, UInt32 WriteMask, UInt32 UserWriteMask)
@@ -333,17 +333,17 @@ namespace LibUA
 
 			public NodeId DataType
 			{
-				get; protected set;
+				get; internal set;
 			}
 
 			public Core.AccessLevel AccessLevel
 			{
-				get; protected set;
+				get; internal set;
 			}
 
 			public Core.AccessLevel UserAccessLevel
 			{
-				get; protected set;
+				get; internal set;
 			}
 
 			public double MinimumResamplingInterval
@@ -358,7 +358,7 @@ namespace LibUA
 
 			public int ValueRank
 			{
-				get; protected set;
+				get; internal set;
 			}
 
 			public NodeVariable(NodeId Id, QualifiedName BrowseName, LocalizedText DisplayName, LocalizedText Description, UInt32 WriteMask, UInt32 UserWriteMask, Core.AccessLevel AccessLevel, Core.AccessLevel UserAccessLevel, double MinimumResamplingInterval, bool IsHistorizing, NodeId DataType, ValueRank DefaultRank = Core.ValueRank.Scalar)

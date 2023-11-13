@@ -68,12 +68,12 @@ namespace LibUA
 			ReaderWriterLockSlim monitorMapRW;
 			Dictionary<ServerMonitorKey, List<MonitoredItem>> monitorMap;
 
-			public virtual X509Certificate2 ApplicationCertificate
+			internal virtual X509Certificate2 ApplicationCertificate
 			{
 				get { return null; }
 			}
 
-			public virtual RSA ApplicationPrivateKey
+			internal virtual RSA ApplicationPrivateKey
 			{
 				get { return null; }
 			}
@@ -94,7 +94,7 @@ namespace LibUA
 				monitorMap = new Dictionary<ServerMonitorKey, List<MonitoredItem>>();
 			}
 
-			public virtual bool MonitorAdd(object session, MonitoredItem mi)
+			internal virtual bool MonitorAdd(object session, MonitoredItem mi)
 			{
 				Node node;
 				if (!AddressSpaceTable.TryGetValue(mi.ItemToMonitor.NodeId, out node) ||
@@ -129,7 +129,7 @@ namespace LibUA
 				return true;
 			}
 
-			public virtual void MonitorRemove(object session, MonitoredItem mi)
+			internal virtual void MonitorRemove(object session, MonitoredItem mi)
 			{
 				var key = new ServerMonitorKey(mi.ItemToMonitor);
 				try
@@ -147,7 +147,7 @@ namespace LibUA
 				}
 			}
 
-			public virtual void MonitorNotifyDataChange(NodeId id, DataValue dv)
+			internal virtual void MonitorNotifyDataChange(NodeId id, DataValue dv)
 			{
 				var key = new ServerMonitorKey(id, NodeAttribute.Value);
 				//Console.WriteLine("{0} {1}", id.ToString(), dv.Value.ToString());
@@ -182,7 +182,7 @@ namespace LibUA
 				}
 			}
 
-			public virtual void MonitorNotifyEvent(NodeId id, EventNotification ev)
+			internal virtual void MonitorNotifyEvent(NodeId id, EventNotification ev)
 			{
 				var key = new ServerMonitorKey(id, NodeAttribute.EventNotifier);
 				//Console.WriteLine("{0} {1}", id.ToString(), dv.Value.ToString());
@@ -217,36 +217,36 @@ namespace LibUA
 				}
 			}
 
-			public virtual object SessionCreate(SessionCreationInfo sessionInfo)
+			internal virtual object SessionCreate(SessionCreationInfo sessionInfo)
 			{
 				return null;
 			}
 
-			public virtual bool SessionValidateClientApplication(object session, ApplicationDescription clientApplicationDescription, byte[] clientCertificate, string sessionName)
+			internal virtual bool SessionValidateClientApplication(object session, ApplicationDescription clientApplicationDescription, byte[] clientCertificate, string sessionName)
 			{
 				return true;
 			}
 
-			public virtual bool SessionValidateClientUser(object session, object userIdentityToken)
+			internal virtual bool SessionValidateClientUser(object session, object userIdentityToken)
 			{
 				return true;
 			}
 
-			public virtual bool SessionActivateClient(object session, SecurityPolicy securityPolicy, MessageSecurityMode messageSecurityMode, X509Certificate2 remoteCertificate)
+			internal virtual bool SessionActivateClient(object session, SecurityPolicy securityPolicy, MessageSecurityMode messageSecurityMode, X509Certificate2 remoteCertificate)
 			{
 				return true;
 			}
 
-			public virtual void SessionRelease(object session)
+			internal virtual void SessionRelease(object session)
 			{
 			}
 
-			public virtual Core.ApplicationDescription GetApplicationDescription(string endpointUrlHint)
+			internal virtual Core.ApplicationDescription GetApplicationDescription(string endpointUrlHint)
 			{
 				return null;
 			}
 
-			public virtual IList<Core.EndpointDescription> GetEndpointDescriptions(string endpointUrlHint)
+			internal virtual IList<Core.EndpointDescription> GetEndpointDescriptions(string endpointUrlHint)
 			{
 				return new List<Core.EndpointDescription>();
 			}
@@ -262,7 +262,7 @@ namespace LibUA
 				return new DataValue(null, StatusCode.Good);
 			}
 
-			public virtual CallMethodResult HandleCallMethodResult(CallMethodRequest callMethodRequest)
+			internal virtual CallMethodResult HandleCallMethodResult(CallMethodRequest callMethodRequest)
 			{
 				return null;
 			}
@@ -339,7 +339,7 @@ namespace LibUA
 				return false;
 			}
 
-			public virtual StatusCode HandleTranslateBrowsePathRequest(object session, BrowsePath path, List<BrowsePathTarget> res)
+			internal virtual StatusCode HandleTranslateBrowsePathRequest(object session, BrowsePath path, List<BrowsePathTarget> res)
 			{
 				Node node;
 				if (!AddressSpaceTable.TryGetValue(path.StartingNode, out node) ||
@@ -396,7 +396,7 @@ namespace LibUA
 				return StatusCode.Good;
 			}
 
-			public virtual StatusCode HandleBrowseRequest(object session, BrowseDescription browseDesc, List<ReferenceDescription> results, int maxResults, ContinuationPointBrowse cont)
+			internal virtual StatusCode HandleBrowseRequest(object session, BrowseDescription browseDesc, List<ReferenceDescription> results, int maxResults, ContinuationPointBrowse cont)
 			{
 				Node node;
 				if (!AddressSpaceTable.TryGetValue(browseDesc.Id, out node) ||
@@ -476,7 +476,7 @@ namespace LibUA
 				return StatusCode.Good;
 			}
 
-			public virtual UInt32[] HandleWriteRequest(object session, WriteValue[] writeValues)
+			internal virtual UInt32[] HandleWriteRequest(object session, WriteValue[] writeValues)
 			{
 				var respStatus = new UInt32[writeValues.Length];
 				for (int i = 0; i < writeValues.Length; i++)
@@ -487,12 +487,12 @@ namespace LibUA
 				return respStatus;
 			}
 
-			public virtual UInt32 HandleHistoryReadRequest(object session, object readDetails, HistoryReadValueId id, ContinuationPointHistory continuationPoint, List<DataValue> results, ref int? offsetContinueFit)
+			internal virtual (StatusCode Status, int? OffsetContinueFit) HandleHistoryReadRequest(object session, object readDetails, HistoryReadValueId id, ContinuationPointHistory continuationPoint, List<DataValue> results, int? offsetContinueFit)
 			{
-				return (UInt32)StatusCode.BadNotImplemented;
+				return (StatusCode.BadNotImplemented, offsetContinueFit);
 			}
 
-			public virtual UInt32[] HandleHistoryUpdateRequest(object session, HistoryUpdateData[] updates)
+			internal virtual StatusCode[] HandleHistoryUpdateRequest(object session, HistoryUpdateData[] updates)
 			{
 				UInt32[] resps = new UInt32[updates.Length];
 				for (int i = 0; i < updates.Length; i++)
@@ -500,15 +500,15 @@ namespace LibUA
 					resps[i] = (UInt32)StatusCode.BadNotImplemented;
 				}
 
-				return resps;
+				return resps.Cast<StatusCode>().ToArray();
 			}
 
-			public virtual UInt32 HandleHistoryEventReadRequest(object session, object readDetails, HistoryReadValueId id, ContinuationPointHistory continuationPoint, List<object[]> results)
+			internal virtual StatusCode HandleHistoryEventReadRequest(object session, object readDetails, HistoryReadValueId id, ContinuationPointHistory continuationPoint, List<object[]> results)
 			{
-				return (UInt32)StatusCode.BadNotImplemented;
+				return StatusCode.BadNotImplemented;
 			}
 
-			public virtual DataValue[] HandleReadRequest(object session, ReadValueId[] readValueIds)
+			internal virtual DataValue[] HandleReadRequest(object session, ReadValueId[] readValueIds)
 			{
 				var res = new DataValue[readValueIds.Length];
 
