@@ -14,7 +14,7 @@ namespace LibUA
 
 			public UInt16 NamespaceIndex
 			{
-				get; internal set;
+				get; protected set;
 			}
 
 			public UInt32 NumericIdentifier
@@ -29,7 +29,7 @@ namespace LibUA
 
 			public string StringIdentifier
 			{
-				get; internal set;
+				get; protected set;
 			}
 
 			public NodeIdNetType IdType
@@ -233,7 +233,7 @@ namespace LibUA
 
 			public NodeId Id
 			{
-				get; protected set;
+				get; internal set;
 			}
 
 			public NodeClass Class

@@ -82,7 +82,7 @@ namespace LibUA
 			get { return totalBytesRecv; }
 		}
 
-		public bool IsConnected
+		internal bool IsConnected
 		{
 			get { return tcp != null && tcp.Connected; }
 		}
