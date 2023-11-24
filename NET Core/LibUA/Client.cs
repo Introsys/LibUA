@@ -2185,7 +2185,7 @@ namespace LibUA
 			}
 		}
 
-		public StatusCode Write(WriteValue[] Ids, out uint[] results)
+		internal StatusCode Write(WriteValue[] Ids, out uint[] results)
 		{
 			results = null;
 
