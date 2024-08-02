@@ -43,7 +43,7 @@ namespace LibUA
                 return GetNextPendingSubscription() != null;
             }
 
-            internal override bool Pulse()
+            protected override bool Pulse()
             {
                 var res = SLPulse();
                 if (res != StatusCode.Good)
@@ -54,7 +54,7 @@ namespace LibUA
                 return true;
             }
 
-            StatusCode SLPulse()
+            private StatusCode SLPulse()
             {
                 if (config.SLState != ConnectionState.Established ||
                     pendingNotificationRequests.Count == 0)
@@ -91,10 +91,7 @@ namespace LibUA
             {
                 if (sub.ChangeNotification == Subscription.ChangeNotificationType.None)
                 {
-                    if (logger != null)
-                    {
-                        logger.Log(LogLevel.Error, string.Format("{0}: No updates in SLPulseDataChangeNotification, sub {1}", LoggerID(), sub.SubscriptionId));
-                    }
+                    logger?.Log(LogLevel.Error, string.Format("{0}: No updates in SLPulseDataChangeNotification, sub {1}", LoggerID(), sub.SubscriptionId));
 
                     return StatusCode.BadNothingToDo;
                 }
@@ -102,7 +99,7 @@ namespace LibUA
                 var req = pendingNotificationRequests.Dequeue();
                 req.Timestamp = DateTime.Now;
 
-                var respBuf = new MemoryBuffer(maximumMessageSize);
+                using var respBuf = new MemoryBuffer(maximumMessageSize);
                 bool succeeded = DispatchMessage_WriteHeader(config, respBuf,
                     (uint)RequestCode.PublishResponse, req, (uint)StatusCode.Good);
 
@@ -110,8 +107,7 @@ namespace LibUA
                 var publishTable = new Dictionary<uint, List<object[]>>();
                 int numPublishTableEntries = 0;
 
-                Queue<uint> acknowledgeSeqNums;
-                if (!pendingSubscriptionAcknowledgements.TryGetValue(sub.SubscriptionId, out acknowledgeSeqNums))
+                if (!pendingSubscriptionAcknowledgements.TryGetValue(sub.SubscriptionId, out Queue<uint> acknowledgeSeqNums))
                 {
                     acknowledgeSeqNums = new Queue<uint>();
                 }
@@ -130,8 +126,7 @@ namespace LibUA
 
                     var evs = new List<object[]>();
 
-                    EventNotification ev;
-                    while (mi.QueueEvent.TryPeek(out ev))
+                    while (mi.QueueEvent.TryPeek(out EventNotification ev))
                     {
                         var fields = MatchFilterClauses(mi.FilterSelectClauses, ev);
 
@@ -305,7 +300,7 @@ namespace LibUA
                 var req = pendingNotificationRequests.Dequeue();
                 req.Timestamp = DateTime.Now;
 
-                var respBuf = new MemoryBuffer(maximumMessageSize);
+                using var respBuf = new MemoryBuffer(maximumMessageSize);
                 bool succeeded = DispatchMessage_WriteHeader(config, respBuf,
                     (uint)RequestCode.PublishResponse, req, (uint)StatusCode.Good);
 
@@ -313,8 +308,7 @@ namespace LibUA
                 var publishTable = new Dictionary<uint, List<DataValue>>();
                 int numPublishTableEntries = 0;
 
-                Queue<uint> acknowledgeSeqNums;
-                if (!pendingSubscriptionAcknowledgements.TryGetValue(sub.SubscriptionId, out acknowledgeSeqNums))
+                if (!pendingSubscriptionAcknowledgements.TryGetValue(sub.SubscriptionId, out Queue<uint> acknowledgeSeqNums))
                 {
                     acknowledgeSeqNums = new Queue<uint>();
                 }
@@ -333,8 +327,7 @@ namespace LibUA
 
                     var dvs = new List<DataValue>();
 
-                    DataValue dv;
-                    while (mi.QueueData.TryPeek(out dv))
+                    while (mi.QueueData.TryPeek(out DataValue dv))
                     {
                         // ClientHandle + dv
                         int sizeRequired = 4 + respBuf.CodingSize(dv);
@@ -505,8 +498,7 @@ namespace LibUA
                             int restorePos = recvBuf.Position;
 
                             recvBuf.Position = 3;
-                            int decrSize = 0;
-                            var unsecureRes = (uint)UASecurity.UnsecureSymmetric(recvBuf, config.TokenID, config.PrevTokenID, MessageEncodedBlockStart, config.LocalKeysets[0], config.RemoteKeysets, config.SecurityPolicy, config.MessageSecurityMode, out decrSize);
+                            var unsecureRes = (uint)UASecurity.UnsecureSymmetric(recvBuf, config.TokenID, config.PrevTokenID, MessageEncodedBlockStart, config.LocalKeysets[0], config.RemoteKeysets, config.SecurityPolicy, config.MessageSecurityMode, out _);
                             recvBuf.Position = restorePos;
 
                             if (!Types.StatusCodeIsGood(unsecureRes))
@@ -566,10 +558,7 @@ namespace LibUA
                         return DispatchHello(config, recvBuf);
                     }
 
-                    if (logger != null)
-                    {
-                        logger.Log(LogLevel.Error, string.Format("{0}: TL already set", LoggerID()));
-                    }
+                    logger?.Log(LogLevel.Error, string.Format("{0}: TL already set", LoggerID()));
 
                     return ErrorInternal;
                 }
@@ -612,10 +601,7 @@ namespace LibUA
                     return DispatchMessage(config, recvBuf);
                 }
 
-                if (logger != null)
-                {
-                    logger.Log(LogLevel.Error, string.Format("{0}: Message type 0x{1} is not supported", LoggerID(), messageType.ToString("X")));
-                }
+                logger?.Log(LogLevel.Error, string.Format("{0}: Message type 0x{1} is not supported", LoggerID(), messageType.ToString("X")));
 
                 UAStatusCode = (uint)StatusCode.BadTcpMessageTypeInvalid;
                 return ErrorInternal;
@@ -631,26 +617,21 @@ namespace LibUA
 
                 recvBuf.Position++;
 
-                uint messageSize = 0;
-                if (!recvBuf.Decode(out messageSize)) { return ErrorParseFail; }
+                if (!recvBuf.Decode(out uint messageSize)) { return ErrorParseFail; }
                 if (messageSize > recvBuf.Capacity)
                 {
                     throw new Exception("Incomplete message");
                 }
 
-                UInt32 secureChannelId, securityTokenId, securitySeqNum, securityReqId;
-                if (!recvBuf.Decode(out secureChannelId)) { return ErrorParseFail; }
-                if (!recvBuf.Decode(out securityTokenId)) { return ErrorParseFail; }
-                if (!recvBuf.Decode(out securitySeqNum)) { return ErrorParseFail; }
-                if (!recvBuf.Decode(out securityReqId)) { return ErrorParseFail; }
+                if (!recvBuf.Decode(out uint secureChannelId)) { return ErrorParseFail; }
+                if (!recvBuf.Decode(out uint securityTokenId)) { return ErrorParseFail; }
+                if (!recvBuf.Decode(out uint securitySeqNum)) { return ErrorParseFail; }
+                if (!recvBuf.Decode(out uint securityReqId)) { return ErrorParseFail; }
 
                 if (secureChannelId != config.ChannelID &&
                     (!config.PrevChannelID.HasValue || secureChannelId != config.PrevChannelID.Value))
                 {
-                    if (logger != null)
-                    {
-                        logger.Log(LogLevel.Error, string.Format("{0}: Requested secure channel ID {1} but current is {2} and previous was {3}", LoggerID(), secureChannelId, config.ChannelID, config.PrevChannelID.HasValue ? config.PrevChannelID.ToString() : "null"));
-                    }
+                    logger?.Log(LogLevel.Error, string.Format("{0}: Requested secure channel ID {1} but current is {2} and previous was {3}", LoggerID(), secureChannelId, config.ChannelID, config.PrevChannelID.HasValue ? config.PrevChannelID.ToString() : "null"));
 
                     UAStatusCode = (uint)StatusCode.BadSecureChannelIdInvalid;
                     return ErrorInternal;
@@ -661,10 +642,7 @@ namespace LibUA
                 if (securityTokenId != config.TokenID &&
                     (!config.PrevTokenID.HasValue || securityTokenId != config.PrevTokenID.Value))
                 {
-                    if (logger != null)
-                    {
-                        logger.Log(LogLevel.Error, string.Format("{0}: Requested security token ID {1} but current is {2} and previous was {3}", LoggerID(), securityTokenId, config.TokenID, config.PrevTokenID.HasValue ? config.PrevTokenID.ToString() : "null"));
-                    }
+                    logger?.Log(LogLevel.Error, string.Format("{0}: Requested security token ID {1} but current is {2} and previous was {3}", LoggerID(), securityTokenId, config.TokenID, config.PrevTokenID.HasValue ? config.PrevTokenID.ToString() : "null"));
 
                     UAStatusCode = (uint)StatusCode.BadIdentityTokenInvalid;
                     return ErrorInternal;
@@ -672,10 +650,7 @@ namespace LibUA
 
                 if (config.RemoteSequence.SequenceNumber >= securitySeqNum)
                 {
-                    if (logger != null)
-                    {
-                        logger.Log(LogLevel.Error, string.Format("{0}: Sequence number is {1}, expected {2} or higher", LoggerID(), securitySeqNum, config.RemoteSequence.SequenceNumber));
-                    }
+                    logger?.Log(LogLevel.Error, string.Format("{0}: Sequence number is {1}, expected {2} or higher", LoggerID(), securitySeqNum, config.RemoteSequence.SequenceNumber));
 
                     UAStatusCode = (uint)StatusCode.BadSequenceNumberInvalid;
                     return ErrorInternal;
@@ -683,30 +658,22 @@ namespace LibUA
 
                 config.RemoteSequence.SequenceNumber = securitySeqNum;
 
-                NodeId typeId;
-                if (!recvBuf.Decode(out typeId)) { return ErrorParseFail; }
+                if (!recvBuf.Decode(out NodeId typeId)) { return ErrorParseFail; }
 
-                RequestHeader reqHeader;
-                if (!recvBuf.Decode(out reqHeader)) { return ErrorParseFail; }
+                if (!recvBuf.Decode(out RequestHeader reqHeader)) { return ErrorParseFail; }
                 reqHeader.SecurityTokenID = config.TokenID;
                 reqHeader.SecurityRequestID = securityReqId;
                 reqHeader.SecuritySequenceNum = securitySeqNum;
 
                 if (config.AuthToken != null && !reqHeader.AuthToken.Equals(config.AuthToken))
                 {
-                    if (logger != null)
-                    {
-                        logger.Log(LogLevel.Error, string.Format("{0}: Bad auth token {1}, expected {2}", LoggerID(), reqHeader.AuthToken.ToString(), config.AuthToken.ToString()));
-                    }
+                    logger?.Log(LogLevel.Error, string.Format("{0}: Bad auth token {1}, expected {2}", LoggerID(), reqHeader.AuthToken.ToString(), config.AuthToken.ToString()));
 
                     UAStatusCode = (uint)StatusCode.BadSecureChannelTokenUnknown;
                     return ErrorInternal;
                 }
 
-                if (logger != null)
-                {
-                    logger.Log(LogLevel.Info, string.Format("{0}: Message type {1} with SL state {2}", LoggerID(), typeId.ToString(), config.SLState.ToString()));
-                }
+                logger?.Log(LogLevel.Info, string.Format("{0}: Message type {1} with SL state {2}", LoggerID(), typeId.ToString(), config.SLState.ToString()));
 
                 if (typeId.NamespaceIndex == 0)
                 {
@@ -720,10 +687,7 @@ namespace LibUA
                             case (uint)RequestCode.CreateSessionRequest: return DispatchMessage_CreateSessionRequest(config, reqHeader, recvBuf, messageSize);
                             case (uint)RequestCode.ActivateSessionRequest: return DispatchMessage_ActivateSessionRequest(config, reqHeader, recvBuf, messageSize);
                             case (uint)RequestCode.CloseSessionRequest:
-                                if (logger != null)
-                                {
-                                    logger.Log(LogLevel.Info, string.Format("{0}: Client sent CloseSessionRequest", LoggerID()));
-                                }
+                                logger?.Log(LogLevel.Info, string.Format("{0}: Client sent CloseSessionRequest", LoggerID()));
                                 return ErrorClosed;
 
                             case (uint)RequestCode.ReadRequest: return DispatchMessage_ReadRequest(config, reqHeader, recvBuf, messageSize);
@@ -752,10 +716,7 @@ namespace LibUA
                             case (uint)RequestCode.RepublishRequest: return DispatchMessage_RepublishRequest(config, reqHeader, recvBuf, messageSize);
 
                             case (uint)RequestCode.CloseSecureChannelRequest:
-                                if (logger != null)
-                                {
-                                    logger.Log(LogLevel.Info, string.Format("{0}: Client sent CloseSecureChannelRequest", LoggerID()));
-                                }
+                                logger?.Log(LogLevel.Info, string.Format("{0}: Client sent CloseSecureChannelRequest", LoggerID()));
                                 return ErrorClosed;
                         }
                     }
@@ -769,17 +730,11 @@ namespace LibUA
                             case (uint)RequestCode.CreateSessionRequest: return DispatchMessage_CreateSessionRequest(config, reqHeader, recvBuf, messageSize);
                             case (uint)RequestCode.ActivateSessionRequest: return DispatchMessage_ActivateSessionRequest(config, reqHeader, recvBuf, messageSize);
                             case (uint)RequestCode.CloseSessionRequest:
-                                if (logger != null)
-                                {
-                                    logger.Log(LogLevel.Info, string.Format("{0}: Client sent CloseSessionRequest", LoggerID()));
-                                }
+                                logger?.Log(LogLevel.Info, string.Format("{0}: Client sent CloseSessionRequest", LoggerID()));
                                 return ErrorClosed;
 
                             case (uint)RequestCode.CloseSecureChannelRequest:
-                                if (logger != null)
-                                {
-                                    logger.Log(LogLevel.Info, string.Format("{0}: Client sent CloseSecureChannelRequest", LoggerID()));
-                                }
+                                logger?.Log(LogLevel.Info, string.Format("{0}: Client sent CloseSecureChannelRequest", LoggerID()));
                                 return ErrorClosed;
 
                             default:
@@ -788,10 +743,7 @@ namespace LibUA
                     }
                 }
 
-                if (logger != null)
-                {
-                    logger.Log(LogLevel.Error, string.Format("{0}: Message type {1} is not supported with SL state {2}", LoggerID(), typeId.ToString(), config.SLState.ToString()));
-                }
+                logger?.Log(LogLevel.Error, string.Format("{0}: Message type {1} is not supported with SL state {2}", LoggerID(), typeId.ToString(), config.SLState.ToString()));
 
                 UAStatusCode = (uint)StatusCode.BadServiceUnsupported;
                 return ErrorInternal;
@@ -810,8 +762,10 @@ namespace LibUA
 
                 succeeded &= respBuf.Encode(new NodeId(serviceTypeId));
 
-                var respHeader = new ResponseHeader(reqHeader);
-                respHeader.ServiceResult = serviceResult;
+                var respHeader = new ResponseHeader(reqHeader)
+                {
+                    ServiceResult = serviceResult
+                };
                 succeeded &= respBuf.Encode(respHeader);
 
                 config.LocalSequence.SequenceNumber++;
@@ -820,33 +774,25 @@ namespace LibUA
 
             protected int DispatchMessage_ActivateSessionRequest(SLChannel config, RequestHeader reqHeader, MemoryBuffer recvBuf, uint messageSize)
             {
-                string clientSignatureAlgorithm;
-                byte[] clientSignature;
-                string[] localeIds;
 
-                if (!recvBuf.DecodeUAString(out clientSignatureAlgorithm)) { return ErrorParseFail; }
-                if (!recvBuf.DecodeUAByteString(out clientSignature)) { return ErrorParseFail; }
+                if (!recvBuf.DecodeUAString(out string clientSignatureAlgorithm)) { return ErrorParseFail; }
+                if (!recvBuf.DecodeUAByteString(out byte[] clientSignature)) { return ErrorParseFail; }
 
-                UInt32 numSignedSoftwareCertificate;
-                if (!recvBuf.Decode(out numSignedSoftwareCertificate)) { return ErrorParseFail; }
+                if (!recvBuf.Decode(out uint numSignedSoftwareCertificate)) { return ErrorParseFail; }
                 if (numSignedSoftwareCertificate != 0xFFFFFFFFu)
                 {
                     for (uint i = 0; i < numSignedSoftwareCertificate; i++)
                     {
-                        string CertificateData;
-                        byte[] Signature;
+                        if (!recvBuf.DecodeUAString(out string _)) { return ErrorParseFail; }
 
-                        if (!recvBuf.DecodeUAString(out CertificateData)) { return ErrorParseFail; }
-                        if (!recvBuf.DecodeUAByteString(out Signature)) { return ErrorParseFail; }
+                        if (!recvBuf.DecodeUAByteString(out _)) { return ErrorParseFail; }
                     }
                 }
 
-                if (!recvBuf.DecodeUAString(out localeIds)) { return ErrorParseFail; }
+                if (!recvBuf.DecodeUAString(out string[] _)) { return ErrorParseFail; }
 
-                NodeId userIdentityTokenTypeId;
-                if (!recvBuf.Decode(out userIdentityTokenTypeId)) { return ErrorParseFail; }
-                byte userIdentityTokenBodyMask;
-                if (!recvBuf.Decode(out userIdentityTokenBodyMask)) { return ErrorParseFail; }
+                if (!recvBuf.Decode(out NodeId userIdentityTokenTypeId)) { return ErrorParseFail; }
+                if (!recvBuf.Decode(out byte userIdentityTokenBodyMask)) { return ErrorParseFail; }
 
                 // Binary body
                 if (userIdentityTokenBodyMask != 1)
@@ -856,11 +802,8 @@ namespace LibUA
 
                 if (userIdentityTokenTypeId.NumericIdentifier == (uint)UserIdentityTokenType.Anonymous)
                 {
-                    uint bodySize;
-                    string policyId;
-
-                    if (!recvBuf.Decode(out bodySize)) { return ErrorParseFail; }
-                    if (!recvBuf.DecodeUAString(out policyId)) { return ErrorParseFail; }
+                    if (!recvBuf.Decode(out uint _)) { return ErrorParseFail; }
+                    if (!recvBuf.DecodeUAString(out string policyId)) { return ErrorParseFail; }
 
                     if (!app.SessionValidateClientUser(config.Session, new UserIdentityAnonymousToken(policyId)))
                     {
@@ -870,15 +813,11 @@ namespace LibUA
                 }
                 else if (userIdentityTokenTypeId.NumericIdentifier == (uint)UserIdentityTokenType.UserNameIdentityToken)
                 {
-                    uint bodySize;
-                    string policyId, username, algorithm;
-                    byte[] password;
-
-                    if (!recvBuf.Decode(out bodySize)) { return ErrorParseFail; }
-                    if (!recvBuf.DecodeUAString(out policyId)) { return ErrorParseFail; }
-                    if (!recvBuf.DecodeUAString(out username)) { return ErrorParseFail; }
-                    if (!recvBuf.DecodeUAByteString(out password)) { return ErrorParseFail; }
-                    if (!recvBuf.DecodeUAString(out algorithm)) { return ErrorParseFail; }
+                    if (!recvBuf.Decode(out uint _)) { return ErrorParseFail; }
+                    if (!recvBuf.DecodeUAString(out string policyId)) { return ErrorParseFail; }
+                    if (!recvBuf.DecodeUAString(out string username)) { return ErrorParseFail; }
+                    if (!recvBuf.DecodeUAByteString(out byte[] password)) { return ErrorParseFail; }
+                    if (!recvBuf.DecodeUAString(out string algorithm)) { return ErrorParseFail; }
 
                     if (string.IsNullOrEmpty(algorithm))
                     {
@@ -916,12 +855,11 @@ namespace LibUA
                     return ErrorParseFail;
                 }
 
-                string signatureAlgorithm;
-                byte[] signatureByteString;
-                if (!recvBuf.DecodeUAString(out signatureAlgorithm)) { return ErrorParseFail; }
-                if (!recvBuf.DecodeUAByteString(out signatureByteString)) { return ErrorParseFail; }
+                if (!recvBuf.DecodeUAString(out string _)) { return ErrorParseFail; }
 
-                var respBuf = new MemoryBuffer(maximumMessageSize);
+                if (!recvBuf.DecodeUAByteString(out _)) { return ErrorParseFail; }
+
+                using var respBuf = new MemoryBuffer(maximumMessageSize);
                 bool succeeded = DispatchMessage_WriteHeader(config, respBuf,
                     (uint)RequestCode.ActivateSessionResponse, reqHeader, (uint)StatusCode.Good);
 
@@ -943,10 +881,7 @@ namespace LibUA
                         clientSignatureAlgorithm != Types.SignatureAlgorithmRsaOaep256 &&
                         clientSignatureAlgorithm != Types.SignatureAlgorithmRsaPss256)
                     {
-                        if (logger != null)
-                        {
-                            logger.Log(LogLevel.Error, string.Format("{0}: Client signature algorithm {1} is not supported", LoggerID(), clientSignatureAlgorithm));
-                        }
+                        logger?.Log(LogLevel.Error, string.Format("{0}: Client signature algorithm {1} is not supported", LoggerID(), clientSignatureAlgorithm));
 
                         UAStatusCode = (uint)StatusCode.BadSecurityChecksFailed;
                         return ErrorInternal;
@@ -993,21 +928,16 @@ namespace LibUA
 
             protected int DispatchMessage_CreateSessionRequest(SLChannel config, RequestHeader reqHeader, MemoryBuffer recvBuf, uint messageSize)
             {
-                ApplicationDescription clientDesc = null;
-                if (!recvBuf.Decode(out clientDesc)) { return ErrorParseFail; }
+                if (!recvBuf.Decode(out ApplicationDescription clientDesc)) { return ErrorParseFail; }
 
-                string severUri, endpointUrl, sessionName;
-                byte[] clientNonce, clientCertificate;
-                double requestedSessionTimeOut;
-                UInt32 maxResponseMessageSize;
+                if (!recvBuf.DecodeUAString(out string _)) { return ErrorParseFail; }
+                if (!recvBuf.DecodeUAString(out string endpointUrl)) { return ErrorParseFail; }
+                if (!recvBuf.DecodeUAString(out string sessionName)) { return ErrorParseFail; }
+                if (!recvBuf.DecodeUAByteString(out byte[] clientNonce)) { return ErrorParseFail; }
+                if (!recvBuf.DecodeUAByteString(out byte[] clientCertificate)) { return ErrorParseFail; }
+                if (!recvBuf.Decode(out double requestedSessionTimeOut)) { return ErrorParseFail; }
 
-                if (!recvBuf.DecodeUAString(out severUri)) { return ErrorParseFail; }
-                if (!recvBuf.DecodeUAString(out endpointUrl)) { return ErrorParseFail; }
-                if (!recvBuf.DecodeUAString(out sessionName)) { return ErrorParseFail; }
-                if (!recvBuf.DecodeUAByteString(out clientNonce)) { return ErrorParseFail; }
-                if (!recvBuf.DecodeUAByteString(out clientCertificate)) { return ErrorParseFail; }
-                if (!recvBuf.Decode(out requestedSessionTimeOut)) { return ErrorParseFail; }
-                if (!recvBuf.Decode(out maxResponseMessageSize)) { return ErrorParseFail; }
+                if (!recvBuf.Decode(out uint _)) { return ErrorParseFail; }
 
                 if (!app.SessionValidateClientApplication(config.Session, clientDesc, clientCertificate, sessionName))
                 {
@@ -1015,7 +945,7 @@ namespace LibUA
                     return ErrorInternal;
                 }
 
-                var respBuf = new MemoryBuffer(maximumMessageSize);
+                using var respBuf = new MemoryBuffer(maximumMessageSize);
                 bool succeeded = DispatchMessage_WriteHeader(config, respBuf,
                     (uint)RequestCode.CreateSessionResponse, reqHeader, (uint)StatusCode.Good);
 
@@ -1099,7 +1029,7 @@ namespace LibUA
                     succeeded &= respBuf.EncodeUAByteString(serverSignature);
                 }
 
-                maxResponseMessageSize = Math.Min(config.TL.LocalConfig.MaxMessageSize, config.TL.RemoteConfig.MaxMessageSize);
+                uint maxResponseMessageSize = Math.Min(config.TL.LocalConfig.MaxMessageSize, config.TL.RemoteConfig.MaxMessageSize);
                 succeeded &= respBuf.Encode(maxResponseMessageSize);
 
                 if (!succeeded)
@@ -1113,14 +1043,14 @@ namespace LibUA
 
             protected int DispatchMessage_FindServersRequest(SLChannel config, RequestHeader reqHeader, MemoryBuffer recvBuf, uint messageSize)
             {
-                string endpointUrl;
-                string[] localeIds, profileIds;
 
-                if (!recvBuf.DecodeUAString(out endpointUrl)) { return ErrorParseFail; }
-                if (!recvBuf.DecodeUAString(out localeIds)) { return ErrorParseFail; }
-                if (!recvBuf.DecodeUAString(out profileIds)) { return ErrorParseFail; }
+                if (!recvBuf.DecodeUAString(out string endpointUrl)) { return ErrorParseFail; }
 
-                var respBuf = new MemoryBuffer(maximumMessageSize);
+                if (!recvBuf.DecodeUAString(out string[] _)) { return ErrorParseFail; }
+
+                if (!recvBuf.DecodeUAString(out string[] _)) { return ErrorParseFail; }
+
+                using var respBuf = new MemoryBuffer(maximumMessageSize);
                 bool succeeded = DispatchMessage_WriteHeader(config, respBuf,
                     (uint)RequestCode.FindServersResponse, reqHeader, (uint)StatusCode.Good);
 
@@ -1152,14 +1082,14 @@ namespace LibUA
 
             protected int DispatchMessage_GetEndpointsRequest(SLChannel config, RequestHeader reqHeader, MemoryBuffer recvBuf, uint messageSize)
             {
-                string endpointUrl;
-                string[] localeIds, profileIds;
 
-                if (!recvBuf.DecodeUAString(out endpointUrl)) { return ErrorParseFail; }
-                if (!recvBuf.DecodeUAString(out localeIds)) { return ErrorParseFail; }
-                if (!recvBuf.DecodeUAString(out profileIds)) { return ErrorParseFail; }
+                if (!recvBuf.DecodeUAString(out string endpointUrl)) { return ErrorParseFail; }
 
-                var respBuf = new MemoryBuffer(maximumMessageSize);
+                if (!recvBuf.DecodeUAString(out string[] _)) { return ErrorParseFail; }
+
+                if (!recvBuf.DecodeUAString(out string[] _)) { return ErrorParseFail; }
+
+                using var respBuf = new MemoryBuffer(maximumMessageSize);
                 bool succeeded = DispatchMessage_WriteHeader(config, respBuf,
                     (uint)RequestCode.GetEndpointsResponse, reqHeader, (uint)StatusCode.Good);
 
@@ -1185,7 +1115,7 @@ namespace LibUA
                 return (int)messageSize;
             }
 
-            bool ChunkReconstruct(MemoryBuffer buf, List<uint> chunkLengths)
+            private bool ChunkReconstruct(MemoryBuffer buf, List<uint> chunkLengths)
             {
                 if (buf.Capacity < ChunkHeaderOverhead)
                 {
@@ -1230,14 +1160,14 @@ namespace LibUA
                 return true;
             }
 
-            MemoryBuffer ChunkReconstructSecured(MemoryBuffer buf, List<uint> chunkLengths, SLChannel config)
+            private MemoryBuffer ChunkReconstructSecured(MemoryBuffer buf, List<uint> chunkLengths, SLChannel config)
             {
                 if (buf.Capacity < ChunkHeaderOverhead)
                 {
                     return null;
                 }
 
-                MemoryBuffer tmpBuf = new MemoryBuffer(buf.Capacity);
+                using MemoryBuffer tmpBuf = new MemoryBuffer(buf.Capacity);
                 MemoryBuffer recvBuf = new MemoryBuffer(buf.Capacity);
 
                 uint readOffset = 0;
@@ -1248,8 +1178,7 @@ namespace LibUA
                     Array.Copy(buf.Buffer, readOffset, tmpBuf.Buffer, 0, (int)len);
 
                     tmpBuf.Position = 3;
-                    int decrSize = 0;
-                    var unsecureRes = (uint)UASecurity.UnsecureSymmetric(tmpBuf, config.TokenID, config.PrevTokenID, MessageEncodedBlockStart, config.LocalKeysets[0], config.RemoteKeysets, config.SecurityPolicy, config.MessageSecurityMode, out decrSize);
+                    var unsecureRes = (uint)UASecurity.UnsecureSymmetric(tmpBuf, config.TokenID, config.PrevTokenID, MessageEncodedBlockStart, config.LocalKeysets[0], config.RemoteKeysets, config.SecurityPolicy, config.MessageSecurityMode, out int decrSize);
 
                     if (!Types.StatusCodeIsGood(unsecureRes))
                     {
@@ -1274,7 +1203,7 @@ namespace LibUA
                 return recvBuf;
             }
 
-            List<uint> ChunkCalculateSizes(MemoryBuffer memBuf)
+            private List<uint> ChunkCalculateSizes(MemoryBuffer memBuf)
             {
                 var chunkLengths = new List<uint>();
 
@@ -1295,8 +1224,7 @@ namespace LibUA
                     }
 
                     bool isFinal = chunkType == (byte)'F';
-                    UInt32 chunkLength;
-                    if (!memBuf.Decode(out chunkLength, (int)offset + 4))
+                    if (!memBuf.Decode(out uint chunkLength, (int)offset + 4))
                     {
                         return null;
                     }
@@ -1335,7 +1263,7 @@ namespace LibUA
                     //Console.WriteLine("{0} -> {1} chunks", respBuf.Position, numChunks);
                     //var bigChunkBuffer = new MemoryBuffer((int)config.TL.RemoteConfig.MaxMessageSize);
 
-                    var chunk = new MemoryBuffer(chunkSize + ChunkHeaderOverhead + TLPaddingOverhead);
+                    using var chunk = new MemoryBuffer(chunkSize + ChunkHeaderOverhead + TLPaddingOverhead);
                     for (int i = 0; i < numChunks; i++)
                     {
                         bool isFinal = i == numChunks - 1;
@@ -1374,7 +1302,7 @@ namespace LibUA
                             }
                         }
 
-                        int numSent = socket.Send(chunk.Buffer, chunk.Position, SocketFlags.None);
+                        _ = socket.Send(chunk.Buffer, chunk.Position, SocketFlags.None);
                     }
 
                     //var chunkSizes = ChunkCalculateSizes(bigChunkBuffer);
@@ -1408,7 +1336,7 @@ namespace LibUA
                         }
                     }
 
-                    int numSent = socket.Send(respBuf.Buffer, respBuf.Position, SocketFlags.None);
+                    _ = socket.Send(respBuf.Buffer, respBuf.Position, SocketFlags.None);
                 }
             }
 
@@ -1418,20 +1346,14 @@ namespace LibUA
                 {
                     if (app.ApplicationCertificate == null)
                     {
-                        if (logger != null)
-                        {
-                            logger.Log(LogLevel.Error, string.Format("{0}: Application did not return application certificate, requested security policy {1}", LoggerID(), recvBuf.Buffer[recvBuf.Position].ToString("X")));
-                        }
+                        logger?.Log(LogLevel.Error, string.Format("{0}: Application did not return application certificate, requested security policy {1}", LoggerID(), recvBuf.Buffer[recvBuf.Position].ToString("X")));
 
                         return ErrorInternal;
                     }
 
                     if (app.ApplicationPrivateKey == null)
                     {
-                        if (logger != null)
-                        {
-                            logger.Log(LogLevel.Error, string.Format("{0}: Application did not return application private key, requested security policy {1}", LoggerID(), recvBuf.Buffer[recvBuf.Position].ToString("X")));
-                        }
+                        logger?.Log(LogLevel.Error, string.Format("{0}: Application did not return application private key, requested security policy {1}", LoggerID(), recvBuf.Buffer[recvBuf.Position].ToString("X")));
 
                         return ErrorInternal;
                     }
@@ -1439,33 +1361,24 @@ namespace LibUA
 
                 if (recvBuf.Buffer[recvBuf.Position] != 'F')
                 {
-                    if (logger != null)
-                    {
-                        logger.Log(LogLevel.Error, string.Format("{0}: Open can only have Final chunk type, not 0x{1}", LoggerID(), recvBuf.Buffer[recvBuf.Position].ToString("X")));
-                    }
+                    logger?.Log(LogLevel.Error, string.Format("{0}: Open can only have Final chunk type, not 0x{1}", LoggerID(), recvBuf.Buffer[recvBuf.Position].ToString("X")));
                 }
 
                 recvBuf.Position++;
 
-                uint messageSize = 0;
-                if (!recvBuf.Decode(out messageSize)) { return ErrorParseFail; }
+                if (!recvBuf.Decode(out uint messageSize)) { return ErrorParseFail; }
                 if (messageSize > recvBuf.Capacity)
                 {
                     throw new Exception("Incomplete message");
                 }
 
-                UInt32 secureChannelId;
-                string securityPolicyUri;
-                byte[] senderCertificate, recvCertThumbprint;
-                UInt32 sequenceNumber, requestId;
-                NodeId messageType;
 
-                if (!recvBuf.Decode(out secureChannelId)) { return ErrorParseFail; }
+                if (!recvBuf.Decode(out uint secureChannelId)) { return ErrorParseFail; }
 
                 // AsymmetricAlgorithmSecurityHeader
-                if (!recvBuf.DecodeUAString(out securityPolicyUri)) { return ErrorParseFail; }
-                if (!recvBuf.DecodeUAByteString(out senderCertificate)) { return ErrorParseFail; }
-                if (!recvBuf.DecodeUAByteString(out recvCertThumbprint)) { return ErrorParseFail; }
+                if (!recvBuf.DecodeUAString(out string securityPolicyUri)) { return ErrorParseFail; }
+                if (!recvBuf.DecodeUAByteString(out byte[] senderCertificate)) { return ErrorParseFail; }
+                if (!recvBuf.DecodeUAByteString(out byte[] recvCertThumbprint)) { return ErrorParseFail; }
 
                 try
                 {
@@ -1542,9 +1455,9 @@ namespace LibUA
                     Array.Copy(asymDecBuf, 0, recvBuf.Buffer, recvBuf.Position, minPlainSize);
                 }
 
-                if (!recvBuf.Decode(out sequenceNumber)) { return ErrorParseFail; }
-                if (!recvBuf.Decode(out requestId)) { return ErrorParseFail; }
-                if (!recvBuf.Decode(out messageType)) { return ErrorParseFail; }
+                if (!recvBuf.Decode(out uint sequenceNumber)) { return ErrorParseFail; }
+                if (!recvBuf.Decode(out uint requestId)) { return ErrorParseFail; }
+                if (!recvBuf.Decode(out NodeId messageType)) { return ErrorParseFail; }
 
                 if (!messageType.EqualsNumeric(0, (uint)RequestCode.OpenSecureChannelRequest))
                 {
@@ -1552,20 +1465,13 @@ namespace LibUA
                     return ErrorInternal;
                 }
 
-                RequestHeader reqHeader;
-                if (!recvBuf.Decode(out reqHeader)) { return ErrorParseFail; }
+                if (!recvBuf.Decode(out RequestHeader reqHeader)) { return ErrorParseFail; }
 
-                UInt32 clientProtocolVersion;
-                UInt32 securityTokenRequestType;
-                UInt32 messageSecurityMode;
-                byte[] clientNonce;
-                UInt32 reqLifetime;
-
-                if (!recvBuf.Decode(out clientProtocolVersion)) { return ErrorParseFail; }
-                if (!recvBuf.Decode(out securityTokenRequestType)) { return ErrorParseFail; }
-                if (!recvBuf.Decode(out messageSecurityMode)) { return ErrorParseFail; }
-                if (!recvBuf.DecodeUAByteString(out clientNonce)) { return ErrorParseFail; }
-                if (!recvBuf.Decode(out reqLifetime)) { return ErrorParseFail; }
+                if (!recvBuf.Decode(out uint _)) { return ErrorParseFail; }
+                if (!recvBuf.Decode(out uint securityTokenRequestType)) { return ErrorParseFail; }
+                if (!recvBuf.Decode(out uint messageSecurityMode)) { return ErrorParseFail; }
+                if (!recvBuf.DecodeUAByteString(out byte[] clientNonce)) { return ErrorParseFail; }
+                if (!recvBuf.Decode(out uint reqLifetime)) { return ErrorParseFail; }
 
                 try
                 {
@@ -1579,7 +1485,7 @@ namespace LibUA
 
                 if (securityTokenRequestType == (uint)SecurityTokenRequestType.Issue)
                 {
-                    var rnd = new Random();
+                    _ = new Random();
                     config.ChannelID = 1; //(uint)(rnd.Next() % 10000);
                     config.TokenID = 1000;
 
@@ -1595,10 +1501,7 @@ namespace LibUA
                         RequestId = requestId
                     };
 
-                    if (logger != null)
-                    {
-                        logger.Log(LogLevel.Info, string.Format("{0}: SL security token {1} issued for channel {2} with security policy {3}", LoggerID(), config.TokenID, config.ChannelID, config.SecurityPolicy.ToString()));
-                    }
+                    logger?.Log(LogLevel.Info, string.Format("{0}: SL security token {1} issued for channel {2} with security policy {3}", LoggerID(), config.TokenID, config.ChannelID, config.SecurityPolicy.ToString()));
                 }
                 else if (securityTokenRequestType == (uint)SecurityTokenRequestType.Renew)
                 {
@@ -1619,10 +1522,7 @@ namespace LibUA
 
                     reqHeader.SecurityTokenID = config.TokenID;
 
-                    if (logger != null)
-                    {
-                        logger.Log(LogLevel.Info, string.Format("{0}: SL security token {1} renewed for channel {2} with security policy {3}, previous token was {4}", LoggerID(), config.TokenID, config.ChannelID, config.SecurityPolicy.ToString(), config.PrevTokenID.ToString()));
-                    }
+                    logger?.Log(LogLevel.Info, string.Format("{0}: SL security token {1} renewed for channel {2} with security policy {3}, previous token was {4}", LoggerID(), config.TokenID, config.ChannelID, config.SecurityPolicy.ToString(), config.PrevTokenID.ToString()));
 
                     foreach (var sub in subscriptionMap.Values)
                     {
@@ -1697,7 +1597,7 @@ namespace LibUA
                     }
                 }
 
-                var respBuf = new MemoryBuffer(maximumMessageSize);
+                using var respBuf = new MemoryBuffer(maximumMessageSize);
                 bool succeeded = true;
                 succeeded &= respBuf.Encode((uint)(MessageType.Open) | ((uint)'F' << 24));
                 succeeded &= respBuf.Encode((UInt32)0);
@@ -1815,17 +1715,13 @@ namespace LibUA
 
             protected int DispatchHello(SLChannel config, MemoryBuffer recvBuf)
             {
-                uint messageSize = 0;
                 if (recvBuf.Buffer[recvBuf.Position] != 'F')
                 {
-                    if (logger != null)
-                    {
-                        logger.Log(LogLevel.Error, string.Format("{0}: Hello can only have Final chunk type, not 0x{1}", LoggerID(), recvBuf.Buffer[recvBuf.Position].ToString("X")));
-                    }
+                    logger?.Log(LogLevel.Error, string.Format("{0}: Hello can only have Final chunk type, not 0x{1}", LoggerID(), recvBuf.Buffer[recvBuf.Position].ToString("X")));
                 }
 
                 recvBuf.Position++;
-                if (!recvBuf.Decode(out messageSize)) { return ErrorParseFail; }
+                if (!recvBuf.Decode(out uint messageSize)) { return ErrorParseFail; }
                 if (messageSize > recvBuf.Capacity)
                 {
                     throw new Exception("Incomplete message");
@@ -1861,8 +1757,7 @@ namespace LibUA
                     maximumMessageSize = (int)config.TL.LocalConfig.MaxMessageSize;
                 }
 
-                var endpoint = string.Empty;
-                if (!recvBuf.DecodeUAString(out endpoint)) { return ErrorParseFail; }
+                if (!recvBuf.DecodeUAString(out string endpoint)) { return ErrorParseFail; }
                 config.TL.RemoteEndpoint = endpoint;
 
                 //if (recvBuf.Position != messageSize)
@@ -1873,7 +1768,7 @@ namespace LibUA
                 //	}
                 //}
 
-                var respBuf = new MemoryBuffer(maximumMessageSize);
+                using var respBuf = new MemoryBuffer(maximumMessageSize);
                 bool succeeded = true;
                 succeeded &= respBuf.Encode((uint)(MessageType.Acknowledge) | ((uint)'F' << 24));
                 succeeded &= respBuf.Encode((UInt32)0);
@@ -1895,31 +1790,24 @@ namespace LibUA
 
             protected int DispatchMessage_HistoryReadRequest(SLChannel config, RequestHeader reqHeader, MemoryBuffer recvBuf, uint messageSize)
             {
-                NodeId historyReadTypeId;
-                byte historyReadTypeMask;
-                UInt32 historyReadTypeSize;
-                bool releaseContinuationPoints;
-                UInt32 timestampsToReturnUint;
                 TimestampsToReturn timestampsToReturn;
 
-                if (!recvBuf.Decode(out historyReadTypeId)) { return ErrorParseFail; }
-                if (!recvBuf.Decode(out historyReadTypeMask)) { return ErrorParseFail; }
-                if (!recvBuf.Decode(out historyReadTypeSize)) { return ErrorParseFail; }
+                if (!recvBuf.Decode(out NodeId historyReadTypeId)) { return ErrorParseFail; }
 
-                object readDetails = null;
+                if (!recvBuf.Decode(out byte _)) { return ErrorParseFail; }
+
+                if (!recvBuf.Decode(out uint _)) { return ErrorParseFail; }
+
+                object readDetails;
                 if (historyReadTypeId.EqualsNumeric(0, (uint)UAConst.ReadRawModifiedDetails_Encoding_DefaultBinary))
                 {
-                    bool IsReadModified;
                     DateTime StartTime, EndTime;
-                    Int64 StartTimeTick, EndTimeTick;
-                    UInt32 NumValuesPerNode;
-                    bool ReturnBounds;
 
-                    if (!recvBuf.Decode(out IsReadModified)) { return ErrorParseFail; }
-                    if (!recvBuf.Decode(out StartTimeTick)) { return ErrorParseFail; }
-                    if (!recvBuf.Decode(out EndTimeTick)) { return ErrorParseFail; }
-                    if (!recvBuf.Decode(out NumValuesPerNode)) { return ErrorParseFail; }
-                    if (!recvBuf.Decode(out ReturnBounds)) { return ErrorParseFail; }
+                    if (!recvBuf.Decode(out bool IsReadModified)) { return ErrorParseFail; }
+                    if (!recvBuf.Decode(out long StartTimeTick)) { return ErrorParseFail; }
+                    if (!recvBuf.Decode(out long EndTimeTick)) { return ErrorParseFail; }
+                    if (!recvBuf.Decode(out uint NumValuesPerNode)) { return ErrorParseFail; }
+                    if (!recvBuf.Decode(out bool ReturnBounds)) { return ErrorParseFail; }
 
                     try
                     {
@@ -1944,16 +1832,12 @@ namespace LibUA
                 else if (historyReadTypeId.EqualsNumeric(0, (uint)UAConst.ReadProcessedDetails_Encoding_DefaultBinary))
                 {
                     DateTime StartTime, EndTime;
-                    Int64 StartTimeTick, EndTimeTick;
-                    double ProcessingInterval;
-                    Int32 NoOfAggregateTypes;
                     NodeId[] AggregateTypes;
-                    AggregateConfiguration AggregateConfig;
 
-                    if (!recvBuf.Decode(out StartTimeTick)) { return ErrorParseFail; }
-                    if (!recvBuf.Decode(out EndTimeTick)) { return ErrorParseFail; }
-                    if (!recvBuf.Decode(out ProcessingInterval)) { return ErrorParseFail; }
-                    if (!recvBuf.Decode(out NoOfAggregateTypes)) { return ErrorParseFail; }
+                    if (!recvBuf.Decode(out long StartTimeTick)) { return ErrorParseFail; }
+                    if (!recvBuf.Decode(out long EndTimeTick)) { return ErrorParseFail; }
+                    if (!recvBuf.Decode(out double ProcessingInterval)) { return ErrorParseFail; }
+                    if (!recvBuf.Decode(out int NoOfAggregateTypes)) { return ErrorParseFail; }
 
                     AggregateTypes = new NodeId[NoOfAggregateTypes];
                     for (uint i = 0; i < NoOfAggregateTypes; i++)
@@ -1961,7 +1845,7 @@ namespace LibUA
                         if (!recvBuf.Decode(out AggregateTypes[i])) { return ErrorParseFail; }
                     }
 
-                    if (!recvBuf.Decode(out AggregateConfig)) { return ErrorParseFail; }
+                    if (!recvBuf.Decode(out AggregateConfiguration AggregateConfig)) { return ErrorParseFail; }
 
                     try
                     {
@@ -1985,17 +1869,14 @@ namespace LibUA
                 }
                 else if (historyReadTypeId.EqualsNumeric(0, (uint)UAConst.ReadAtTimeDetails_Encoding_DefaultBinary))
                 {
-                    Int32 NoOfReqTimes;
                     DateTime[] ReqTimes;
-                    bool UseSimpleBounds;
 
-                    if (!recvBuf.Decode(out NoOfReqTimes)) { return ErrorParseFail; }
+                    if (!recvBuf.Decode(out int NoOfReqTimes)) { return ErrorParseFail; }
 
                     ReqTimes = new DateTime[NoOfReqTimes];
                     for (uint i = 0; i < NoOfReqTimes; i++)
                     {
-                        Int64 timeTick;
-                        if (!recvBuf.Decode(out timeTick)) { return ErrorParseFail; }
+                        if (!recvBuf.Decode(out long timeTick)) { return ErrorParseFail; }
 
                         try
                         {
@@ -2007,21 +1888,18 @@ namespace LibUA
                         }
                     }
 
-                    if (!recvBuf.Decode(out UseSimpleBounds)) { return ErrorParseFail; }
+                    if (!recvBuf.Decode(out bool UseSimpleBounds)) { return ErrorParseFail; }
 
                     readDetails = new ReadAtTimeDetails(ReqTimes, UseSimpleBounds);
                 }
                 else if (historyReadTypeId.EqualsNumeric(0, (uint)UAConst.ReadEventDetails_Encoding_DefaultBinary))
                 {
-                    Int64 StartTimeTick, EndTimeTick;
-                    UInt32 NumValuesPerNode;
                     DateTime StartTime, EndTime;
-                    EventFilter Filter;
 
-                    if (!recvBuf.Decode(out NumValuesPerNode)) { return ErrorParseFail; }
-                    if (!recvBuf.Decode(out StartTimeTick)) { return ErrorParseFail; }
-                    if (!recvBuf.Decode(out EndTimeTick)) { return ErrorParseFail; }
-                    if (!recvBuf.Decode(out Filter, false)) { return ErrorParseFail; }
+                    if (!recvBuf.Decode(out uint NumValuesPerNode)) { return ErrorParseFail; }
+                    if (!recvBuf.Decode(out long StartTimeTick)) { return ErrorParseFail; }
+                    if (!recvBuf.Decode(out long EndTimeTick)) { return ErrorParseFail; }
+                    if (!recvBuf.Decode(out EventFilter Filter, false)) { return ErrorParseFail; }
 
                     try
                     {
@@ -2048,8 +1926,8 @@ namespace LibUA
                     readDetails = null;
                 }
 
-                if (!recvBuf.Decode(out timestampsToReturnUint)) { return ErrorParseFail; }
-                if (!recvBuf.Decode(out releaseContinuationPoints)) { return ErrorParseFail; }
+                if (!recvBuf.Decode(out uint timestampsToReturnUint)) { return ErrorParseFail; }
+                if (!recvBuf.Decode(out bool releaseContinuationPoints)) { return ErrorParseFail; }
 
                 try
                 {
@@ -2060,14 +1938,12 @@ namespace LibUA
                     return ErrorParseFail;
                 }
 
-                UInt32 numNodesToRead;
-                if (!recvBuf.Decode(out numNodesToRead)) { return ErrorParseFail; }
+                if (!recvBuf.Decode(out uint numNodesToRead)) { return ErrorParseFail; }
 
-                var respBuf = new MemoryBuffer(maximumMessageSize);
-                bool succeeded = true;
-
+                using var respBuf = new MemoryBuffer(maximumMessageSize);
                 int availableSpacePerRequest = (int)((config.TL.RemoteConfig.MaxMessageSize / Math.Max(1, numNodesToRead)) * UsableMessageSizeFactor) - respBuf.Position - TLPaddingOverhead;
 
+                bool succeeded;
                 if (releaseContinuationPoints)
                 {
                     succeeded = DispatchMessage_WriteHeader(config, respBuf,
@@ -2075,15 +1951,13 @@ namespace LibUA
 
                     for (int i = 0; i < numNodesToRead; i++)
                     {
-                        NodeId nodeId;
-                        string indexRange;
-                        QualifiedName dataEncoding;
-                        byte[] contPoint;
+                        if (!recvBuf.Decode(out NodeId _)) { return ErrorParseFail; }
 
-                        if (!recvBuf.Decode(out nodeId)) { return ErrorParseFail; }
-                        if (!recvBuf.DecodeUAString(out indexRange)) { return ErrorParseFail; }
-                        if (!recvBuf.Decode(out dataEncoding)) { return ErrorParseFail; }
-                        if (!recvBuf.DecodeUAByteString(out contPoint)) { return ErrorParseFail; }
+                        if (!recvBuf.DecodeUAString(out string _)) { return ErrorParseFail; }
+
+                        if (!recvBuf.Decode(out QualifiedName _)) { return ErrorParseFail; }
+
+                        if (!recvBuf.DecodeUAByteString(out _)) { return ErrorParseFail; }
 
                         // TODO: Free contPoint
                     }
@@ -2120,15 +1994,11 @@ namespace LibUA
                     var resultsEvents = new List<object[]>();
                     for (int i = 0; i < numNodesToRead; i++)
                     {
-                        NodeId nodeId;
-                        string indexRange;
-                        QualifiedName dataEncoding;
-                        byte[] contPoint;
 
-                        if (!recvBuf.Decode(out nodeId)) { return ErrorParseFail; }
-                        if (!recvBuf.DecodeUAString(out indexRange)) { return ErrorParseFail; }
-                        if (!recvBuf.Decode(out dataEncoding)) { return ErrorParseFail; }
-                        if (!recvBuf.DecodeUAByteString(out contPoint)) { return ErrorParseFail; }
+                        if (!recvBuf.Decode(out NodeId nodeId)) { return ErrorParseFail; }
+                        if (!recvBuf.DecodeUAString(out string indexRange)) { return ErrorParseFail; }
+                        if (!recvBuf.Decode(out QualifiedName dataEncoding)) { return ErrorParseFail; }
+                        if (!recvBuf.DecodeUAByteString(out byte[] contPoint)) { return ErrorParseFail; }
 
                         var nodeToRead = new HistoryReadValueId(nodeId, indexRange, dataEncoding, contPoint);
 
@@ -2186,7 +2056,7 @@ namespace LibUA
                         if (readDetails is ReadEventDetails)
                         {
                             resultsEvents.Clear();
-                            var statusCode = (uint)app.HandleHistoryEventReadRequest(config.Session, readDetails, nodeToRead, cont, resultsEvents);
+                            var statusCode = app.HandleHistoryEventReadRequest(config.Session, readDetails, nodeToRead, cont, resultsEvents);
 
                             int availableSpace = availableSpacePerRequest;
 
@@ -2271,10 +2141,7 @@ namespace LibUA
                         {
                             results.Clear();
                             int? offsetContinueFit = null;
-                            var result = app.HandleHistoryReadRequest(config.Session, readDetails, nodeToRead, cont, results, offsetContinueFit);
-                            UInt32 statusCode = (UInt32)result.Status;
-                            offsetContinueFit = result.OffsetContinueFit;
-
+                            var statusCode = app.HandleHistoryReadRequest(config.Session, readDetails, nodeToRead, cont, results, ref offsetContinueFit);
 
                             int availableSpace = availableSpacePerRequest;
 
@@ -2370,13 +2237,9 @@ namespace LibUA
 
             protected int DispatchMessage_ReadRequest(SLChannel config, RequestHeader reqHeader, MemoryBuffer recvBuf, uint messageSize)
             {
-                double maxAge;
-                UInt32 timestampsToReturnUint;
-                UInt32 noOfNodesToRead;
                 TimestampsToReturn timestampsToReturn;
-
-                if (!recvBuf.Decode(out maxAge)) { return ErrorParseFail; }
-                if (!recvBuf.Decode(out timestampsToReturnUint)) { return ErrorParseFail; }
+                if (!recvBuf.Decode(out double _)) { return ErrorParseFail; }
+                if (!recvBuf.Decode(out uint timestampsToReturnUint)) { return ErrorParseFail; }
 
                 try
                 {
@@ -2387,7 +2250,7 @@ namespace LibUA
                     return ErrorParseFail;
                 }
 
-                if (!recvBuf.Decode(out noOfNodesToRead)) { return ErrorParseFail; }
+                if (!recvBuf.Decode(out uint noOfNodesToRead)) { return ErrorParseFail; }
 
                 var readValueIds = new ReadValueId[noOfNodesToRead];
                 for (uint i = 0; i < noOfNodesToRead; i++)
@@ -2395,7 +2258,7 @@ namespace LibUA
                     if (!recvBuf.Decode(out readValueIds[i])) { return ErrorParseFail; }
                 }
 
-                var respBuf = new MemoryBuffer(maximumMessageSize);
+                using var respBuf = new MemoryBuffer(maximumMessageSize);
                 bool succeeded = DispatchMessage_WriteHeader(config, respBuf,
                     (uint)RequestCode.ReadResponse, reqHeader, (uint)StatusCode.Good);
 
@@ -2432,19 +2295,14 @@ namespace LibUA
             {
                 // TODO: Verify
 
-                Int32 NoOfHistoryUpdateDetails;
+                if (!recvBuf.Decode(out int NoOfHistoryUpdateDetails)) { return ErrorParseFail; }
 
-                if (!recvBuf.Decode(out NoOfHistoryUpdateDetails)) { return ErrorParseFail; }
-
-                var respBuf = new MemoryBuffer(maximumMessageSize);
+                using var respBuf = new MemoryBuffer(maximumMessageSize);
                 var historyUpdates = new HistoryUpdateData[NoOfHistoryUpdateDetails];
                 for (uint i = 0; i < NoOfHistoryUpdateDetails; i++)
                 {
-                    NodeId typeId;
-                    byte body;
-                    UInt32 eoSize;
 
-                    if (!recvBuf.Decode(out typeId)) { return ErrorParseFail; }
+                    if (!recvBuf.Decode(out NodeId typeId)) { return ErrorParseFail; }
                     if (!typeId.EqualsNumeric(0, (uint)UAConst.UpdateDataDetails_Encoding_DefaultBinary))
                     {
                         DispatchMessage_WriteHeader(config, respBuf,
@@ -2453,7 +2311,7 @@ namespace LibUA
                         return (int)messageSize;
                     }
 
-                    if (!recvBuf.Decode(out body)) { return ErrorParseFail; }
+                    if (!recvBuf.Decode(out byte body)) { return ErrorParseFail; }
                     if (body != 1)
                     {
                         DispatchMessage_WriteHeader(config, respBuf,
@@ -2462,14 +2320,11 @@ namespace LibUA
                         return (int)messageSize;
                     }
 
-                    if (!recvBuf.Decode(out eoSize)) { return ErrorParseFail; }
+                    if (!recvBuf.Decode(out uint _)) { return ErrorParseFail; }
 
-                    NodeId nodeId;
-                    UInt32 perform;
-                    UInt32 numValues;
-                    if (!recvBuf.Decode(out nodeId)) { return ErrorParseFail; }
-                    if (!recvBuf.Decode(out perform)) { return ErrorParseFail; }
-                    if (!recvBuf.Decode(out numValues)) { return ErrorParseFail; }
+                    if (!recvBuf.Decode(out NodeId nodeId)) { return ErrorParseFail; }
+                    if (!recvBuf.Decode(out uint perform)) { return ErrorParseFail; }
+                    if (!recvBuf.Decode(out uint numValues)) { return ErrorParseFail; }
 
                     var dv = new DataValue[numValues];
                     for (uint j = 0; j < numValues; j++)
@@ -2490,7 +2345,7 @@ namespace LibUA
                     }
                 }
 
-                var respVals = app.HandleHistoryUpdateRequest(config.Session, historyUpdates).Cast<uint>().ToArray();
+                var respVals = app.HandleHistoryUpdateRequest(config.Session, historyUpdates);
 
                 bool succeeded = DispatchMessage_WriteHeader(config, respBuf,
                     (uint)RequestCode.HistoryUpdateResponse, reqHeader, (uint)StatusCode.Good);
@@ -2520,9 +2375,8 @@ namespace LibUA
 
             protected int DispatchMessage_WriteRequest(SLChannel config, RequestHeader reqHeader, MemoryBuffer recvBuf, uint messageSize)
             {
-                UInt32 NoOfNodesToWrite;
 
-                if (!recvBuf.Decode(out NoOfNodesToWrite)) { return ErrorParseFail; }
+                if (!recvBuf.Decode(out uint NoOfNodesToWrite)) { return ErrorParseFail; }
 
                 var writeValues = new WriteValue[NoOfNodesToWrite];
                 for (uint i = 0; i < NoOfNodesToWrite; i++)
@@ -2530,7 +2384,7 @@ namespace LibUA
                     if (!recvBuf.Decode(out writeValues[i])) { return ErrorParseFail; }
                 }
 
-                var respBuf = new MemoryBuffer(maximumMessageSize);
+                using var respBuf = new MemoryBuffer(maximumMessageSize);
                 bool succeeded = DispatchMessage_WriteHeader(config, respBuf,
                     (uint)RequestCode.WriteResponse, reqHeader, (uint)StatusCode.Good);
 
@@ -2565,21 +2419,17 @@ namespace LibUA
 
             protected int DispatchMessage_BrowseRequest(SLChannel config, RequestHeader reqHeader, MemoryBuffer recvBuf, uint messageSize)
             {
-                NodeId viewId;
-                Int64 viewTimestampsS;
-                UInt32 viewVersion;
-                UInt32 requestedMaxRefPerNode;
+                if (!recvBuf.Decode(out NodeId _)) { return ErrorParseFail; }
 
-                if (!recvBuf.Decode(out viewId)) { return ErrorParseFail; }
-                if (!recvBuf.Decode(out viewTimestampsS)) { return ErrorParseFail; }
-                if (!recvBuf.Decode(out viewVersion)) { return ErrorParseFail; }
-                if (!recvBuf.Decode(out requestedMaxRefPerNode)) { return ErrorParseFail; }
+                if (!recvBuf.Decode(out long _)) { return ErrorParseFail; }
+
+                if (!recvBuf.Decode(out uint _)) { return ErrorParseFail; }
+                if (!recvBuf.Decode(out uint requestedMaxRefPerNode)) { return ErrorParseFail; }
 
                 requestedMaxRefPerNode = Math.Min(requestedMaxRefPerNode, MaxBrowseResults);
                 if (requestedMaxRefPerNode == 0) { requestedMaxRefPerNode = MaxBrowseResults; }
 
-                UInt32 noOfNodesToBrowse;
-                if (!recvBuf.Decode(out noOfNodesToBrowse)) { return ErrorParseFail; }
+                if (!recvBuf.Decode(out uint noOfNodesToBrowse)) { return ErrorParseFail; }
 
                 var browseDescs = new BrowseDescription[noOfNodesToBrowse];
                 for (uint i = 0; i < noOfNodesToBrowse; i++)
@@ -2587,7 +2437,7 @@ namespace LibUA
                     if (!recvBuf.Decode(out browseDescs[i])) { return ErrorParseFail; }
                 }
 
-                var respBuf = new MemoryBuffer(maximumMessageSize);
+                using var respBuf = new MemoryBuffer(maximumMessageSize);
                 bool succeeded = DispatchMessage_WriteHeader(config, respBuf,
                     (uint)RequestCode.BrowseResponse, reqHeader, (uint)StatusCode.Good);
 
@@ -2601,9 +2451,9 @@ namespace LibUA
                 for (uint i = 0; i < noOfNodesToBrowse && succeeded; i++)
                 {
                     references.Clear();
-                    StatusCode status = StatusCode.Good;
                     byte[] contPoint = null;
 
+                    StatusCode status;
                     if (availableContinuationPoints.Count > 0)
                     {
                         int contIndex = availableContinuationPoints.Pop();
@@ -2649,11 +2499,9 @@ namespace LibUA
 
             protected int DispatchMessage_BrowseNextRequest(SLChannel config, RequestHeader reqHeader, MemoryBuffer recvBuf, uint messageSize)
             {
-                bool ReleaseContinuationPoints;
-                UInt32 NoOfContinuationPoints;
 
-                if (!recvBuf.Decode(out ReleaseContinuationPoints)) { return ErrorParseFail; }
-                if (!recvBuf.Decode(out NoOfContinuationPoints)) { return ErrorParseFail; }
+                if (!recvBuf.Decode(out bool ReleaseContinuationPoints)) { return ErrorParseFail; }
+                if (!recvBuf.Decode(out uint NoOfContinuationPoints)) { return ErrorParseFail; }
 
                 var browseContPoints = new byte[NoOfContinuationPoints][];
                 for (uint i = 0; i < NoOfContinuationPoints; i++)
@@ -2661,7 +2509,7 @@ namespace LibUA
                     if (!recvBuf.DecodeUAByteString(out browseContPoints[i])) { return ErrorParseFail; }
                 }
 
-                var respBuf = new MemoryBuffer(maximumMessageSize);
+                using var respBuf = new MemoryBuffer(maximumMessageSize);
                 bool succeeded = DispatchMessage_WriteHeader(config, respBuf,
                     (uint)RequestCode.BrowseNextResponse, reqHeader, (uint)StatusCode.Good);
 
@@ -2677,9 +2525,7 @@ namespace LibUA
                     for (uint i = 0; i < NoOfContinuationPoints; i++)
                     {
                         byte[] contPoint = browseContPoints[i];
-                        ContinuationPointBrowse cont = null;
-
-                        int contIndex = -1;
+                        int contIndex;
                         try
                         {
                             contIndex = BitConverter.ToInt32(contPoint, 0);
@@ -2689,13 +2535,12 @@ namespace LibUA
                             contIndex = -1;
                         }
 
-                        if (continuationBrowse.TryGetValue(contIndex, out cont))
+                        if (continuationBrowse.TryGetValue(contIndex, out ContinuationPointBrowse cont))
                         {
                             cont.IsValid = false;
 
                             availableContinuationPoints.Push(contIndex);
                             continuationBrowse.Remove(contIndex);
-                            contPoint = null;
                         }
                     }
                 }
@@ -2705,12 +2550,10 @@ namespace LibUA
                     var references = new List<ReferenceDescription>();
                     for (uint i = 0; i < NoOfContinuationPoints && succeeded; i++)
                     {
-                        ContinuationPointBrowse cont = null;
                         references.Clear();
-                        StatusCode status = StatusCode.Good;
                         byte[] contPoint = browseContPoints[i];
 
-                        int contIndex = -1;
+                        int contIndex;
                         try
                         {
                             contIndex = BitConverter.ToInt32(contPoint, 0);
@@ -2720,7 +2563,8 @@ namespace LibUA
                             contIndex = -1;
                         }
 
-                        if (continuationBrowse.TryGetValue(contIndex, out cont))
+                        StatusCode status;
+                        if (continuationBrowse.TryGetValue(contIndex, out ContinuationPointBrowse cont))
                         {
                             status = app.HandleBrowseRequest(config.Session, cont.Desc, references, cont.MaxReferencesPerNode, cont);
 
@@ -2768,17 +2612,16 @@ namespace LibUA
             {
                 // TODO: Verify
 
-                UInt32 NoOfBrowsePaths;
                 BrowsePath[] BrowsePaths;
 
-                if (!recvBuf.Decode(out NoOfBrowsePaths)) { return ErrorParseFail; }
+                if (!recvBuf.Decode(out uint NoOfBrowsePaths)) { return ErrorParseFail; }
                 BrowsePaths = new BrowsePath[NoOfBrowsePaths];
                 for (uint i = 0; i < NoOfBrowsePaths; i++)
                 {
                     if (!recvBuf.Decode(out BrowsePaths[i])) { return ErrorParseFail; }
                 }
 
-                var respBuf = new MemoryBuffer(maximumMessageSize);
+                using var respBuf = new MemoryBuffer(maximumMessageSize);
                 bool succeeded = DispatchMessage_WriteHeader(config, respBuf,
                     (uint)RequestCode.TranslateBrowsePathsToNodeIdsResponse, reqHeader, (uint)StatusCode.Good);
 
@@ -2811,20 +2654,14 @@ namespace LibUA
 
             protected int DispatchMessage_CallRequest(SLChannel config, RequestHeader reqHeader, MemoryBuffer recvBuf, uint messageSize)
             {
-                // TODO: Verify
-
-                UInt32 NoofMethodsToCall;
-
-                if (!recvBuf.Decode(out NoofMethodsToCall)) { return ErrorParseFail; }
+                if (!recvBuf.Decode(out uint NoofMethodsToCall)) { return ErrorParseFail; }
                 var reqs = new CallMethodRequest[NoofMethodsToCall];
                 for (uint i = 0; i < NoofMethodsToCall; i++)
                 {
-                    NodeId objectId, nodeId;
-                    if (!recvBuf.Decode(out objectId)) { return ErrorParseFail; }
-                    if (!recvBuf.Decode(out nodeId)) { return ErrorParseFail; }
+                    if (!recvBuf.Decode(out NodeId objectId)) { return ErrorParseFail; }
+                    if (!recvBuf.Decode(out NodeId nodeId)) { return ErrorParseFail; }
 
-                    UInt32 numVariants;
-                    if (!recvBuf.Decode(out numVariants)) { return ErrorParseFail; }
+                    if (!recvBuf.Decode(out uint numVariants)) { return ErrorParseFail; }
                     var inputArgs = new object[numVariants];
                     for (uint j = 0; j < numVariants; j++)
                     {
@@ -2833,7 +2670,13 @@ namespace LibUA
                     reqs[i] = new CallMethodRequest(objectId, nodeId, inputArgs);
                 }
 
-                var respBuf = new MemoryBuffer(maximumMessageSize);
+                var results = new CallMethodResult[NoofMethodsToCall];
+                for (int i = 0; i < reqs.Length; i++)
+                {
+                    results[i] = app.HandleCallRequest(config.Session, reqs[i]);
+                }
+
+                using var respBuf = new MemoryBuffer(maximumMessageSize);
                 bool succeeded = DispatchMessage_WriteHeader(config, respBuf,
                     (uint)RequestCode.CallResponse, reqHeader, (uint)StatusCode.Good);
 
@@ -2842,44 +2685,32 @@ namespace LibUA
                     return ErrorRespWrite;
                 }
 
-                succeeded &= respBuf.Encode((UInt32)NoofMethodsToCall);
+                succeeded &= respBuf.Encode((uint)NoofMethodsToCall);
                 for (uint i = 0; i < NoofMethodsToCall; i++)
                 {
-                    CallMethodResult cmr = app.HandleCallMethodResult(reqs[i]);
-                    if (cmr != null)
+                    var methodResult = results[i];
+                    succeeded &= respBuf.Encode((uint)methodResult.StatusCode);
+
+                    // InputArgumentResults: Array of StatusCode
+                    succeeded &= respBuf.Encode((uint)methodResult.Results.Length);
+                    for (uint j = 0; j < methodResult.Results.Length; j++)
                     {
-                        // Status
-                        succeeded &= respBuf.Encode((UInt32)cmr.StatusCode);
-                        // InputArgumentResults: Array of StatusCode
-                        var resultsCount = cmr.Results?.Length ?? 0;
-                        succeeded &= respBuf.Encode((UInt32)resultsCount);
-                        if (resultsCount != 0)
-                            foreach (var result in cmr.Results)
-                                succeeded &= respBuf.Encode(result);
-                        // InputArgumentDiagnosticInfos
-                        succeeded &= respBuf.Encode((UInt32)0);
-                        // OutputArguments: Array of Variant
-                        var outputCount = cmr.Outputs?.Length ?? 0;
-                        succeeded &= respBuf.Encode((UInt32)outputCount);
-                        if (outputCount != 0)
-                            foreach (var output in cmr.Outputs)
-                                succeeded &= respBuf.VariantEncode(output);
+                        succeeded &= respBuf.Encode((uint)methodResult.Results[j]);
                     }
-                    else
+
+                    // InputArgumentDiagnosticInfos
+                    succeeded &= respBuf.Encode((uint)0);
+
+                    // OutputArguments: Array of Variant
+                    succeeded &= respBuf.Encode((uint)methodResult.Outputs.Length);
+                    for (uint j = 0; j < methodResult.Outputs.Length; j++)
                     {
-                        // Status
-                        succeeded &= respBuf.Encode((UInt32)StatusCode.Good);
-                        // InputArgumentResults: Array of StatusCode
-                        succeeded &= respBuf.Encode((UInt32)0);
-                        // InputArgumentDiagnosticInfos
-                        succeeded &= respBuf.Encode((UInt32)0);
-                        // OutputArguments: Array of Variant
-                        succeeded &= respBuf.Encode((UInt32)0);
+                        succeeded &= respBuf.VariantEncode(methodResult.Outputs[j]);
                     }
                 }
 
                 // DiagnosticInfos
-                succeeded &= respBuf.Encode((UInt32)0);
+                succeeded &= respBuf.Encode((uint)0);
 
                 if (!succeeded)
                 {
@@ -2892,8 +2723,7 @@ namespace LibUA
 
             protected int DispatchMessage_RegisterNodesRequest(SLChannel config, RequestHeader reqHeader, MemoryBuffer recvBuf, uint messageSize)
             {
-                UInt32 noOfNodesToRegister;
-                if (!recvBuf.Decode(out noOfNodesToRegister)) { return ErrorParseFail; }
+                if (!recvBuf.Decode(out uint noOfNodesToRegister)) { return ErrorParseFail; }
 
                 var nodesToRegister = new NodeId[noOfNodesToRegister];
                 for (uint i = 0; i < noOfNodesToRegister; i++)
@@ -2901,7 +2731,7 @@ namespace LibUA
                     if (!recvBuf.Decode(out nodesToRegister[i])) { return ErrorParseFail; }
                 }
 
-                var respBuf = new MemoryBuffer(maximumMessageSize);
+                using var respBuf = new MemoryBuffer(maximumMessageSize);
                 bool succeeded = DispatchMessage_WriteHeader(config, respBuf,
                     (uint)RequestCode.RegisterNodesResponse, reqHeader, (uint)StatusCode.BadNotSupported);
 
@@ -2928,19 +2758,15 @@ namespace LibUA
 
             protected int DispatchMessage_CreateSubscriptionRequest(SLChannel config, RequestHeader reqHeader, MemoryBuffer recvBuf, uint messageSize)
             {
-                double RequestedPublishingInterval;
-                UInt32 RequestedLifetimeCount, RequestedMaxKeepAliveCount, MaxNotificationsPerPublish;
-                bool PublishingEnabled;
-                byte Priority;
 
-                if (!recvBuf.Decode(out RequestedPublishingInterval)) { return ErrorParseFail; }
-                if (!recvBuf.Decode(out RequestedLifetimeCount)) { return ErrorParseFail; }
-                if (!recvBuf.Decode(out RequestedMaxKeepAliveCount)) { return ErrorParseFail; }
-                if (!recvBuf.Decode(out MaxNotificationsPerPublish)) { return ErrorParseFail; }
-                if (!recvBuf.Decode(out PublishingEnabled)) { return ErrorParseFail; }
-                if (!recvBuf.Decode(out Priority)) { return ErrorParseFail; }
+                if (!recvBuf.Decode(out double RequestedPublishingInterval)) { return ErrorParseFail; }
+                if (!recvBuf.Decode(out uint RequestedLifetimeCount)) { return ErrorParseFail; }
+                if (!recvBuf.Decode(out uint RequestedMaxKeepAliveCount)) { return ErrorParseFail; }
+                if (!recvBuf.Decode(out uint MaxNotificationsPerPublish)) { return ErrorParseFail; }
+                if (!recvBuf.Decode(out bool PublishingEnabled)) { return ErrorParseFail; }
+                if (!recvBuf.Decode(out byte Priority)) { return ErrorParseFail; }
 
-                var respBuf = new MemoryBuffer(maximumMessageSize);
+                using var respBuf = new MemoryBuffer(maximumMessageSize);
                 bool succeeded = DispatchMessage_WriteHeader(config, respBuf,
                     (uint)RequestCode.CreateSubscriptionResponse, reqHeader, (uint)StatusCode.Good);
 
@@ -2952,10 +2778,7 @@ namespace LibUA
                 UInt32 subId = nextSubscriptionID++;
                 if (subscriptionMap.ContainsKey(subId))
                 {
-                    if (logger != null)
-                    {
-                        logger.Log(LogLevel.Error, string.Format("{0}: Could not allocate subscription ID {1}", LoggerID(), subId));
-                    }
+                    logger?.Log(LogLevel.Error, string.Format("{0}: Could not allocate subscription ID {1}", LoggerID(), subId));
 
                     UAStatusCode = (uint)StatusCode.BadSubscriptionIdInvalid;
                     return ErrorInternal;
@@ -2999,12 +2822,10 @@ namespace LibUA
 
             protected int DispatchMessage_SetPublishingModeRequest(SLChannel config, RequestHeader reqHeader, MemoryBuffer recvBuf, uint messageSize)
             {
-                bool PublishingEnabled;
-                UInt32 NoOfSubscriptionIds;
                 UInt32[] SubscriptionIds;
 
-                if (!recvBuf.Decode(out PublishingEnabled)) { return ErrorParseFail; }
-                if (!recvBuf.Decode(out NoOfSubscriptionIds)) { return ErrorParseFail; }
+                if (!recvBuf.Decode(out bool PublishingEnabled)) { return ErrorParseFail; }
+                if (!recvBuf.Decode(out uint NoOfSubscriptionIds)) { return ErrorParseFail; }
 
                 SubscriptionIds = new UInt32[NoOfSubscriptionIds];
                 for (int i = 0; i < NoOfSubscriptionIds; i++)
@@ -3012,15 +2833,14 @@ namespace LibUA
                     if (!recvBuf.Decode(out SubscriptionIds[i])) { return ErrorParseFail; }
                 }
 
-                var respBuf = new MemoryBuffer(maximumMessageSize);
+                using var respBuf = new MemoryBuffer(maximumMessageSize);
                 bool succeeded = DispatchMessage_WriteHeader(config, respBuf,
                     (uint)RequestCode.SetPublishingModeResponse, reqHeader, (uint)StatusCode.Good);
 
                 succeeded &= respBuf.Encode((UInt32)NoOfSubscriptionIds);
                 for (int i = 0; i < NoOfSubscriptionIds; i++)
                 {
-                    Subscription sub = null;
-                    if (subscriptionMap.TryGetValue(SubscriptionIds[i], out sub))
+                    if (subscriptionMap.TryGetValue(SubscriptionIds[i], out Subscription sub))
                     {
                         sub.PublishingEnabled = PublishingEnabled;
                         succeeded &= respBuf.Encode((UInt32)StatusCode.Good);
@@ -3045,23 +2865,17 @@ namespace LibUA
 
             protected int DispatchMessage_ModifySubscriptionRequest(SLChannel config, RequestHeader reqHeader, MemoryBuffer recvBuf, uint messageSize)
             {
-                UInt32 SubscriptionId;
-                UInt32 RequestedLifetimeCount, RequestedMaxKeepAliveCount, MaxNotificationsPerPublish;
-                double RequestedPublishingInterval;
-                byte Priority;
 
-                if (!recvBuf.Decode(out SubscriptionId)) { return ErrorParseFail; }
-                if (!recvBuf.Decode(out RequestedPublishingInterval)) { return ErrorParseFail; }
-                if (!recvBuf.Decode(out RequestedLifetimeCount)) { return ErrorParseFail; }
-                if (!recvBuf.Decode(out RequestedMaxKeepAliveCount)) { return ErrorParseFail; }
-                if (!recvBuf.Decode(out MaxNotificationsPerPublish)) { return ErrorParseFail; }
-                if (!recvBuf.Decode(out Priority)) { return ErrorParseFail; }
+                if (!recvBuf.Decode(out uint SubscriptionId)) { return ErrorParseFail; }
+                if (!recvBuf.Decode(out double RequestedPublishingInterval)) { return ErrorParseFail; }
+                if (!recvBuf.Decode(out uint RequestedLifetimeCount)) { return ErrorParseFail; }
+                if (!recvBuf.Decode(out uint RequestedMaxKeepAliveCount)) { return ErrorParseFail; }
+                if (!recvBuf.Decode(out uint MaxNotificationsPerPublish)) { return ErrorParseFail; }
+                if (!recvBuf.Decode(out byte Priority)) { return ErrorParseFail; }
 
-                var respBuf = new MemoryBuffer(maximumMessageSize);
-                bool succeeded = true;
-
-                Subscription sub = null;
-                if (subscriptionMap.TryGetValue(SubscriptionId, out sub))
+                using var respBuf = new MemoryBuffer(maximumMessageSize);
+                bool succeeded;
+                if (subscriptionMap.TryGetValue(SubscriptionId, out Subscription sub))
                 {
                     succeeded = DispatchMessage_WriteHeader(config, respBuf,
                         (uint)RequestCode.ModifySubscriptionResponse, reqHeader, (uint)StatusCode.Good);
@@ -3100,17 +2914,16 @@ namespace LibUA
 
             protected int DispatchMessage_DeleteSubscriptionsRequest(SLChannel config, RequestHeader reqHeader, MemoryBuffer recvBuf, uint messageSize)
             {
-                UInt32 NoOfSubIds;
                 UInt32[] SubIds;
 
-                if (!recvBuf.Decode(out NoOfSubIds)) { return ErrorParseFail; }
+                if (!recvBuf.Decode(out uint NoOfSubIds)) { return ErrorParseFail; }
                 SubIds = new UInt32[NoOfSubIds];
                 for (uint i = 0; i < NoOfSubIds; i++)
                 {
                     if (!recvBuf.Decode(out SubIds[i])) { return ErrorParseFail; }
                 }
 
-                var respBuf = new MemoryBuffer(maximumMessageSize);
+                using var respBuf = new MemoryBuffer(maximumMessageSize);
                 bool succeeded = DispatchMessage_WriteHeader(config, respBuf,
                     (uint)RequestCode.DeleteSubscriptionsResponse, reqHeader, (uint)StatusCode.Good);
 
@@ -3122,8 +2935,7 @@ namespace LibUA
                 succeeded &= respBuf.Encode(NoOfSubIds);
                 for (uint i = 0; i < NoOfSubIds; i++)
                 {
-                    Subscription sub = null;
-                    if (!subscriptionMap.TryGetValue(SubIds[i], out sub))
+                    if (!subscriptionMap.TryGetValue(SubIds[i], out Subscription sub))
                     {
                         succeeded &= respBuf.Encode((UInt32)StatusCode.BadSubscriptionIdInvalid);
                     }
@@ -3153,7 +2965,7 @@ namespace LibUA
 
             protected int DispatchMessage_TransferSubscriptionsRequest(SLChannel config, RequestHeader reqHeader, MemoryBuffer recvBuf, uint messageSize)
             {
-                var respBuf = new MemoryBuffer(maximumMessageSize);
+                using var respBuf = new MemoryBuffer(maximumMessageSize);
                 bool succeeded = DispatchMessage_WriteHeader(config, respBuf,
                     (uint)RequestCode.TransferSubscriptionsResponse, reqHeader, (uint)StatusCode.BadNotSupported);
 
@@ -3178,11 +2990,10 @@ namespace LibUA
 
             protected int DispatchMessage_CreateMonitoredItemsRequest(SLChannel config, RequestHeader reqHeader, MemoryBuffer recvBuf, uint messageSize)
             {
-                UInt32 SubscriptionId, TimestampsToReturnUint, NoOfItemsToCreate;
                 TimestampsToReturn timestampsToReturn;
 
-                if (!recvBuf.Decode(out SubscriptionId)) { return ErrorParseFail; }
-                if (!recvBuf.Decode(out TimestampsToReturnUint)) { return ErrorParseFail; }
+                if (!recvBuf.Decode(out uint SubscriptionId)) { return ErrorParseFail; }
+                if (!recvBuf.Decode(out uint TimestampsToReturnUint)) { return ErrorParseFail; }
 
                 try
                 {
@@ -3193,12 +3004,11 @@ namespace LibUA
                     return ErrorParseFail;
                 }
 
-                if (!recvBuf.Decode(out NoOfItemsToCreate)) { return ErrorParseFail; }
+                if (!recvBuf.Decode(out uint NoOfItemsToCreate)) { return ErrorParseFail; }
                 var createRequests = new MonitoredItemCreateRequest[NoOfItemsToCreate];
                 var createResponses = new MonitoredItemCreateResult[NoOfItemsToCreate];
 
-                Subscription sub = null;
-                if (!subscriptionMap.TryGetValue(SubscriptionId, out sub))
+                if (!subscriptionMap.TryGetValue(SubscriptionId, out Subscription sub))
                 {
                     sub = null;
                 }
@@ -3226,9 +3036,10 @@ namespace LibUA
                         continue;
                     }
 
-                    MonitoredItem mi = null;
                     var miHandle = createRequests[i].RequestedParameters.ClientHandle;
 
+
+                    MonitoredItem mi;
                     if (sub.MonitoredItems.ContainsKey(miHandle))
                     {
                         mi = sub.MonitoredItems[miHandle];
@@ -3266,7 +3077,7 @@ namespace LibUA
                     createResponses[i] = new MonitoredItemCreateResult(StatusCode.Good, createRequests[i].RequestedParameters.ClientHandle, samplingInterval, (uint)mi.QueueSize, null);
                 }
 
-                var respBuf = new MemoryBuffer(maximumMessageSize);
+                using var respBuf = new MemoryBuffer(maximumMessageSize);
                 bool succeeded = DispatchMessage_WriteHeader(config, respBuf,
                     (uint)RequestCode.CreateMonitoredItemsResponse, reqHeader, (uint)StatusCode.Good);
 
@@ -3296,14 +3107,13 @@ namespace LibUA
 
             protected int DispatchMessage_SetMonitoringModeRequest(SLChannel config, RequestHeader reqHeader, MemoryBuffer recvBuf, uint messageSize)
             {
-                UInt32 SubscriptionId, MonitoringMode, NoOfItemsToModify;
+                if (!recvBuf.Decode(out uint _)) { return ErrorParseFail; }
 
-                if (!recvBuf.Decode(out SubscriptionId)) { return ErrorParseFail; }
-                if (!recvBuf.Decode(out MonitoringMode)) { return ErrorParseFail; }
+                if (!recvBuf.Decode(out uint _)) { return ErrorParseFail; }
 
-                if (!recvBuf.Decode(out NoOfItemsToModify)) { return ErrorParseFail; }
+                if (!recvBuf.Decode(out uint NoOfItemsToModify)) { return ErrorParseFail; }
 
-                var respBuf = new MemoryBuffer(maximumMessageSize);
+                using var respBuf = new MemoryBuffer(maximumMessageSize);
                 bool succeeded = DispatchMessage_WriteHeader(config, respBuf,
                     (uint)RequestCode.SetMonitoringModeResponse, reqHeader, (uint)StatusCode.Good);
 
@@ -3333,11 +3143,10 @@ namespace LibUA
 
             protected int DispatchMessage_ModifyMonitoredItemsRequest(SLChannel config, RequestHeader reqHeader, MemoryBuffer recvBuf, uint messageSize)
             {
-                UInt32 SubscriptionId, TimestampsToReturnUint, NoOfItemsToModify;
                 TimestampsToReturn timestampsToReturn;
 
-                if (!recvBuf.Decode(out SubscriptionId)) { return ErrorParseFail; }
-                if (!recvBuf.Decode(out TimestampsToReturnUint)) { return ErrorParseFail; }
+                if (!recvBuf.Decode(out uint SubscriptionId)) { return ErrorParseFail; }
+                if (!recvBuf.Decode(out uint TimestampsToReturnUint)) { return ErrorParseFail; }
 
                 try
                 {
@@ -3348,10 +3157,9 @@ namespace LibUA
                     return ErrorParseFail;
                 }
 
-                if (!recvBuf.Decode(out NoOfItemsToModify)) { return ErrorParseFail; }
+                if (!recvBuf.Decode(out uint NoOfItemsToModify)) { return ErrorParseFail; }
 
-                Subscription sub = null;
-                if (!subscriptionMap.TryGetValue(SubscriptionId, out sub))
+                if (!subscriptionMap.TryGetValue(SubscriptionId, out Subscription sub))
                 {
                     sub = null;
                 }
@@ -3371,8 +3179,7 @@ namespace LibUA
                         continue;
                     }
 
-                    MonitoredItem mi = null;
-                    if (!sub.MonitoredItems.TryGetValue(modifyRequests[i].MonitoredItemId, out mi))
+                    if (!sub.MonitoredItems.TryGetValue(modifyRequests[i].MonitoredItemId, out MonitoredItem mi))
                     {
                         modifyResults[i] = new MonitoredItemModifyResult(StatusCode.BadMonitoredItemIdInvalid, 0, 0, null);
                         continue;
@@ -3383,7 +3190,7 @@ namespace LibUA
                     modifyResults[i] = new MonitoredItemModifyResult(StatusCode.Good, -1, (uint)mi.QueueSize, null);
                 }
 
-                var respBuf = new MemoryBuffer(maximumMessageSize);
+                using var respBuf = new MemoryBuffer(maximumMessageSize);
                 bool succeeded = DispatchMessage_WriteHeader(config, respBuf,
                     (uint)RequestCode.ModifyMonitoredItemsResponse, reqHeader, (uint)StatusCode.Good);
 
@@ -3413,11 +3220,10 @@ namespace LibUA
 
             protected int DispatchMessage_DeleteMonitoredItemsRequest(SLChannel config, RequestHeader reqHeader, MemoryBuffer recvBuf, uint messageSize)
             {
-                UInt32 SubscriptionId, NoOfMonitoredItemIds;
                 UInt32[] MonitoredItemIds;
 
-                if (!recvBuf.Decode(out SubscriptionId)) { return ErrorParseFail; }
-                if (!recvBuf.Decode(out NoOfMonitoredItemIds)) { return ErrorParseFail; }
+                if (!recvBuf.Decode(out uint SubscriptionId)) { return ErrorParseFail; }
+                if (!recvBuf.Decode(out uint NoOfMonitoredItemIds)) { return ErrorParseFail; }
 
                 MonitoredItemIds = new UInt32[NoOfMonitoredItemIds];
                 for (uint i = 0; i < NoOfMonitoredItemIds; i++)
@@ -3425,13 +3231,12 @@ namespace LibUA
                     if (!recvBuf.Decode(out MonitoredItemIds[i])) { return ErrorParseFail; }
                 }
 
-                Subscription sub = null;
-                if (!subscriptionMap.TryGetValue(SubscriptionId, out sub))
+                if (!subscriptionMap.TryGetValue(SubscriptionId, out Subscription sub))
                 {
                     sub = null;
                 }
 
-                var respBuf = new MemoryBuffer(maximumMessageSize);
+                using var respBuf = new MemoryBuffer(maximumMessageSize);
                 bool succeeded = DispatchMessage_WriteHeader(config, respBuf,
                     (uint)RequestCode.DeleteMonitoredItemsResponse, reqHeader, (uint)StatusCode.Good);
 
@@ -3450,8 +3255,7 @@ namespace LibUA
                         continue;
                     }
 
-                    MonitoredItem mi = null;
-                    if (!sub.MonitoredItems.TryGetValue(MonitoredItemIds[i], out mi))
+                    if (!sub.MonitoredItems.TryGetValue(MonitoredItemIds[i], out MonitoredItem mi))
                     {
                         succeeded &= respBuf.Encode((UInt32)StatusCode.BadMonitoredItemIdInvalid);
                         continue;
@@ -3483,7 +3287,7 @@ namespace LibUA
                 //if (!recvBuf.Decode(out SubscriptionId)) { return ErrorParseFail; }
                 //if (!recvBuf.Decode(out TimestampsToReturnUint)) { return ErrorParseFail; }
 
-                var respBuf = new MemoryBuffer(maximumMessageSize);
+                using var respBuf = new MemoryBuffer(maximumMessageSize);
                 bool succeeded = DispatchMessage_WriteHeader(config, respBuf,
                     (uint)RequestCode.RepublishResponse, reqHeader, (uint)StatusCode.BadNotSupported);
 
@@ -3514,9 +3318,8 @@ namespace LibUA
             {
                 if (pendingNotificationRequests.Count < MaxPublishRequests)
                 {
-                    UInt32 NoOfSubscriptionAcknowledgements;
 
-                    if (!recvBuf.Decode(out NoOfSubscriptionAcknowledgements)) { return ErrorParseFail; }
+                    if (!recvBuf.Decode(out uint NoOfSubscriptionAcknowledgements)) { return ErrorParseFail; }
                     if (NoOfSubscriptionAcknowledgements == 0xFFFFFFFFu)
                     {
                         NoOfSubscriptionAcknowledgements = 0;
@@ -3524,12 +3327,10 @@ namespace LibUA
 
                     for (uint i = 0; i < NoOfSubscriptionAcknowledgements; i++)
                     {
-                        UInt32 subId, seqNum;
-                        if (!recvBuf.Decode(out subId)) { return ErrorParseFail; }
-                        if (!recvBuf.Decode(out seqNum)) { return ErrorParseFail; }
+                        if (!recvBuf.Decode(out uint subId)) { return ErrorParseFail; }
+                        if (!recvBuf.Decode(out uint seqNum)) { return ErrorParseFail; }
 
-                        Queue<uint> seqQueue = null;
-                        if (pendingSubscriptionAcknowledgements.TryGetValue(subId, out seqQueue))
+                        if (pendingSubscriptionAcknowledgements.TryGetValue(subId, out Queue<uint> seqQueue))
                         {
                             seqQueue.Enqueue(seqNum);
                         }
@@ -3543,12 +3344,9 @@ namespace LibUA
                 }
                 else
                 {
-                    if (logger != null)
-                    {
-                        logger.Log(LogLevel.Error, string.Format("{0}: Too many publish requests (max is {1}), sent BadTooManyPublishRequests", LoggerID(), 1));
-                    }
+                    logger?.Log(LogLevel.Error, string.Format("{0}: Too many publish requests (max is {1}), sent BadTooManyPublishRequests", LoggerID(), 1));
 
-                    var respBuf = new MemoryBuffer(maximumMessageSize);
+                    using var respBuf = new MemoryBuffer(maximumMessageSize);
                     bool succeeded = DispatchMessage_WriteHeader(config, respBuf,
                         (uint)RequestCode.PublishRequest, reqHeader, (uint)StatusCode.BadTooManyPublishRequests);
 
