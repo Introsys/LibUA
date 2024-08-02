@@ -22,14 +22,14 @@ namespace LibUA
 
         public const int ListenerInterval = 100;
 
-        public readonly string Target;
-        public readonly int Port;
-        public readonly string Path;
+        public string Target;
+        public int Port;
+        public string Path;
 
-        public readonly int Timeout;
+        public int Timeout;
 
         protected SLChannel config = null;
-        private int MaximumMessageSize;
+        public int MaximumMessageSize;
         private Semaphore cs = null;
         private Semaphore csDispatching = null;
         private Semaphore csWaitForSecure = null;

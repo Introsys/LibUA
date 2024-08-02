@@ -15,6 +15,7 @@ namespace LibUA
         public static class Types
         {
             public static bool StatusCodeIsGood(uint code) { return (code & 0xC0000000) == 0; }
+            public static bool StatusCodeIsGood(StatusCode code) => StatusCodeIsGood((uint)code);
             public static bool StatusCodeIsUncertain(uint code) { return (code & 0x40000000) != 0; }
             public static bool StatusCodeIsBad(uint code) { return (code & 0x80000000) != 0; }
 
@@ -56,25 +57,31 @@ namespace LibUA
             UserNameIdentityToken = 324,
         }
 
-        public class UserIdentityAnonymousToken
+        public abstract class UserIdentityToken
         {
             public string PolicyId { get; protected set; }
-            public UserIdentityAnonymousToken(string PolicyId)
+            public UserIdentityToken(string PolicyId)
             {
                 this.PolicyId = PolicyId;
             }
         }
 
-        public class UserIdentityUsernameToken
+        public class UserIdentityAnonymousToken : UserIdentityToken
         {
-            public string PolicyId { get; protected set; }
+            public UserIdentityAnonymousToken(string PolicyId) : base(PolicyId)
+            {
+            }
+        }
+
+        public class UserIdentityUsernameToken : UserIdentityToken
+        {
             public string Username { get; protected set; }
             public byte[] PasswordHash { get; protected set; }
             public string Algorithm { get; protected set; }
 
             public UserIdentityUsernameToken(string PolicyId, string Username, byte[] PasswordHash, string Algorithm)
+                : base(PolicyId)
             {
-                this.PolicyId = PolicyId;
                 this.Username = Username;
                 this.PasswordHash = PasswordHash;
                 this.Algorithm = Algorithm;
@@ -5803,7 +5810,7 @@ namespace LibUA
         {
             private static ConcurrentDictionary<Type, Func<MemoryBuffer, NodeId>> _objectEncoders = new();
             private static ConcurrentDictionary<NodeId, Func<MemoryBuffer, object>> _objectDecoders = new();
-            public static void RegisterEncoder<TObject>(Func<MemoryBuffer,NodeId> encoder)
+            public static void RegisterEncoder<TObject>(Func<MemoryBuffer, NodeId> encoder)
             {
                 _objectEncoders[typeof(TObject)] = encoder;
             }
@@ -5828,7 +5835,7 @@ namespace LibUA
                     using var buffer = new MemoryBuffer(BufferCapacity);
                     UAConst payloadType = 0;
 
-                    if(_objectEncoders.TryGetValue(Payload.GetType(), out var encoder))
+                    if (_objectEncoders.TryGetValue(Payload.GetType(), out var encoder))
                     {
                         TypeId = encoder(buffer);
                         if (TypeId == null)
@@ -5860,11 +5867,11 @@ namespace LibUA
                                 break;
                             case EUInformation eui:
                                 payloadType = UAConst.EUInformation;
-                                if(!buffer.Encode(eui)) { return false; }
+                                if (!buffer.Encode(eui)) { return false; }
                                 break;
                             case OpcRange range:
                                 payloadType = UAConst.Range;
-                                if(!buffer.Encode(range)) { return false; }
+                                if (!buffer.Encode(range)) { return false; }
                                 break;
                             default:
                                 break;
@@ -5876,7 +5883,7 @@ namespace LibUA
                         }
                     }
 
-                    if(TypeId != null)
+                    if (TypeId != null)
                     {
                         Body = new byte[buffer.Position];
                         Array.Copy(buffer.Buffer, Body, Body.Length);
@@ -5893,7 +5900,7 @@ namespace LibUA
             {
                 var tmp = new MemoryBuffer(Body);
 
-                if(_objectDecoders.TryGetValue(TypeId, out var decoder))
+                if (_objectDecoders.TryGetValue(TypeId, out var decoder))
                 {
                     Payload = decoder(tmp);
                     if (Payload != null)
@@ -5929,12 +5936,12 @@ namespace LibUA
                         break;
                     case (uint)UAConst.EUInformation:
                         EUInformation eui;
-                        if(!tmp.Decode(out eui)) { return false; }
+                        if (!tmp.Decode(out eui)) { return false; }
                         Payload = eui;
                         break;
                     case (uint)UAConst.Range:
                         OpcRange range;
-                        if(!tmp.Decode(out range)) { return false; }
+                        if (!tmp.Decode(out range)) { return false; }
                         Payload = range;
                         break;
                     default:
@@ -6346,925 +6353,931 @@ namespace LibUA
             public UInt32[] Results { get; protected set; }
             public object[] Outputs { get; protected set; }
 
-            public CallMethodResult(UInt32 StatusCode, UInt32[] Results, object[] Outputs)
+            public CallMethodResult(StatusCode StatusCode, UInt32[] Results, object[] Outputs)
+                : this((uint)StatusCode, Results, Outputs)
             {
-                this.StatusCode = StatusCode;
-                this.Results = Results;
-                this.Outputs = Outputs;
-            }
-        }
 
-        public class ReferenceNode
+            }
+
+        public CallMethodResult(UInt32 StatusCode, UInt32[] Results, object[] Outputs)
         {
-            public NodeId ReferenceType
-            {
-                get; protected set;
-            }
-
-            public NodeId Target
-            {
-                get; protected set;
-            }
-
-            public bool IsInverse
-            {
-                get; protected set;
-            }
-
-            public override string ToString()
-            {
-                return string.Format("[{0}] {1} {2}",
-                    ReferenceType.ToString(),
-                    IsInverse ? "<-" : "->",
-                    Target.ToString());
-            }
-
-            public ReferenceNode(NodeId ReferenceType, NodeId Target, bool IsInverse)
-            {
-                this.ReferenceType = ReferenceType;
-                this.Target = Target;
-                this.IsInverse = IsInverse;
-            }
-        }
-
-        public class BrowseDescription
-        {
-            public NodeId Id { get; protected set; }
-            public BrowseDirection Direction { get; protected set; }
-            public NodeId ReferenceType { get; protected set; }
-            public bool IncludeSubtypes { get; protected set; }
-            public UInt32 NodeClassMask { get; protected set; }
-            public BrowseResultMask ResultMask { get; protected set; }
-
-            public BrowseDescription(NodeId Id, BrowseDirection Direction, NodeId ReferenceType, bool IncludeSubtypes, UInt32 NodeClassMask, BrowseResultMask ResultMask)
-            {
-                this.Id = Id;
-                this.Direction = Direction;
-                this.ReferenceType = ReferenceType;
-                this.IncludeSubtypes = IncludeSubtypes;
-                this.NodeClassMask = NodeClassMask;
-                this.ResultMask = ResultMask;
-            }
-        }
-
-        public class BrowseResult
-        {
-            public UInt32 StatusCode { get; protected set; }
-            public byte[] ContinuationPoint { get; protected set; }
-            public ReferenceDescription[] Refs { get; protected set; }
-
-            public BrowseResult(UInt32 StatusCode, byte[] ContinuationPoint, ReferenceDescription[] Refs)
-            {
-                this.StatusCode = StatusCode;
-                this.ContinuationPoint = ContinuationPoint;
-                this.Refs = Refs;
-            }
-        }
-
-        //public class ContinuationPointBrowse
-        //{
-        //	public bool IsValid
-        //	{
-        //		get; protected set;
-        //	}
-
-        //	public int Offset
-        //	{
-        //		get; protected set;
-        //	}
-
-        //	public int RequestedMaxReferencesPerNode
-        //	{
-        //		get; protected set;
-        //	}
-
-        //	public BrowseDescription Desc
-        //	{
-        //		get; protected set;
-        //	}
-
-        //	public ContinuationPointBrowse(bool IsValid, int Offset, int RequestedMaxReferencesPerNode, BrowseDescription Desc)
-        //	{
-        //		this.IsValid = IsValid;
-        //		this.Offset = Offset;
-        //		this.RequestedMaxReferencesPerNode = RequestedMaxReferencesPerNode;
-        //		this.Desc = Desc;
-        //	}
-        //}
-
-        public struct BrowsePathTarget
-        {
-            public NodeId Target;
-            public UInt32 RemainingPathIndex;
-        }
-
-        public class RelativePathElement
-        {
-            public NodeId ReferenceTypeId
-            {
-                get; protected set;
-            }
-
-            public bool IsInverse
-            {
-                get; protected set;
-            }
-
-            public bool IncludeSubtypes
-            {
-                get; protected set;
-            }
-
-            public QualifiedName TargetName
-            {
-                get; protected set;
-            }
-
-            public RelativePathElement(NodeId ReferenceTypeId, bool IsInverse, bool IncludeSubtypes, QualifiedName TargetName)
-            {
-                this.ReferenceTypeId = ReferenceTypeId;
-                this.IsInverse = IsInverse;
-                this.IncludeSubtypes = IncludeSubtypes;
-                this.TargetName = TargetName;
-            }
-        }
-
-        public class BrowsePath
-        {
-            public NodeId StartingNode
-            {
-                get; protected set;
-            }
-
-            public RelativePathElement[] RelativePath
-            {
-                get; protected set;
-            }
-
-            public BrowsePath(NodeId StartingNode, RelativePathElement[] RelativePath)
-            {
-                this.StartingNode = StartingNode;
-                this.RelativePath = RelativePath;
-            }
-        }
-
-        public class BrowsePathResult
-        {
-            public StatusCode StatusCode
-            {
-                get; protected set;
-            }
-
-            public BrowsePathTarget[] Targets
-            {
-                get; protected set;
-            }
-
-            public BrowsePathResult(StatusCode StatusCode, BrowsePathTarget[] Targets)
-            {
-                this.StatusCode = StatusCode;
-                this.Targets = Targets;
-            }
-        }
-
-        public class ReferenceDescription
-        {
-            public NodeId ReferenceTypeId
-            {
-                get; protected set;
-            }
-
-            public bool IsForward
-            {
-                get; protected set;
-            }
-
-            public NodeId TargetId
-            {
-                get; protected set;
-            }
-
-            public QualifiedName BrowseName
-            {
-                get; protected set;
-            }
-
-            public LocalizedText DisplayName
-            {
-                get; protected set;
-            }
-
-            public NodeClass NodeClass
-            {
-                get; protected set;
-            }
-
-            public NodeId TypeDefinition
-            {
-                get; protected set;
-            }
-
-            public ReferenceDescription(NodeId ReferenceTypeId, bool IsForward, NodeId TargetId, QualifiedName BrowseName, LocalizedText DisplayName, NodeClass NodeClass, NodeId TypeDefinition)
-            {
-                this.ReferenceTypeId = ReferenceTypeId;
-                this.IsForward = IsForward;
-                this.TargetId = TargetId;
-                this.BrowseName = BrowseName;
-                this.DisplayName = DisplayName;
-                this.NodeClass = NodeClass;
-                this.TypeDefinition = TypeDefinition;
-            }
-        }
-
-        public class ApplicationDescription
-        {
-            public string ApplicationUri
-            {
-                get; protected set;
-            }
-
-            public string ProductUri
-            {
-                get; protected set;
-            }
-
-            public LocalizedText ApplicationName
-            {
-                get; protected set;
-            }
-
-            public ApplicationType Type
-            {
-                get; protected set;
-            }
-
-            public string GatewayServerUri
-            {
-                get; protected set;
-            }
-
-            public string DiscoveryProfileUri
-            {
-                get; protected set;
-            }
-
-            public string[] DiscoveryUrls
-            {
-                get; protected set;
-            }
-
-            public ApplicationDescription(string ApplicationUri, string ProductUri, LocalizedText ApplicationName, ApplicationType Type, string GatewayServerUri, string DiscoveryProfileUri, string[] DiscoveryUrls)
-            {
-                this.ApplicationUri = ApplicationUri;
-                this.ProductUri = ProductUri;
-                this.ApplicationName = ApplicationName;
-                this.Type = Type;
-                this.GatewayServerUri = GatewayServerUri;
-                this.DiscoveryProfileUri = DiscoveryProfileUri;
-                this.DiscoveryUrls = DiscoveryUrls;
-            }
-        }
-
-        public class UserTokenPolicy
-        {
-            public string PolicyId
-            {
-                get; protected set;
-            }
-
-            public UserTokenType TokenType
-            {
-                get; protected set;
-            }
-
-            public string IssuedTokenType
-            {
-                get; protected set;
-            }
-
-            public string IssuerEndpointUrl
-            {
-                get; protected set;
-            }
-
-            public string SecurityPolicyUri
-            {
-                get; protected set;
-            }
-
-            public UserTokenPolicy(string PolicyId, UserTokenType TokenType, string IssuedTokenType, string IssuerEndpointUrl, string SecurityPolicyUri)
-            {
-                this.PolicyId = PolicyId;
-                this.TokenType = TokenType;
-                this.IssuedTokenType = IssuedTokenType;
-                this.IssuerEndpointUrl = IssuerEndpointUrl;
-                this.SecurityPolicyUri = SecurityPolicyUri;
-            }
-        }
-
-        public class EndpointDescription
-        {
-            public string EndpointUrl
-            {
-                get; protected set;
-            }
-
-            public ApplicationDescription Server
-            {
-                get; protected set;
-            }
-
-            public byte[] ServerCertificate
-            {
-                get; protected set;
-            }
-
-            public MessageSecurityMode SecurityMode
-            {
-                get; protected set;
-            }
-
-            public string SecurityPolicyUri
-            {
-                get; protected set;
-            }
-
-            public UserTokenPolicy[] UserIdentityTokens
-            {
-                get; protected set;
-            }
-
-            public string TransportProfileUri
-            {
-                get; protected set;
-            }
-
-            public byte SecurityLevel
-            {
-                get; protected set;
-            }
-
-            public EndpointDescription(string EndpointUrl, ApplicationDescription Server, byte[] ServerCertificate, MessageSecurityMode SecurityMode, string SecurityPolicyUri, UserTokenPolicy[] UserIdentityTokens, string TransportProfileUri, byte SecurityLevel)
-            {
-                this.EndpointUrl = EndpointUrl;
-                this.Server = Server;
-                this.ServerCertificate = ServerCertificate;
-                this.SecurityMode = SecurityMode;
-                this.SecurityPolicyUri = SecurityPolicyUri;
-                this.UserIdentityTokens = UserIdentityTokens;
-                this.TransportProfileUri = TransportProfileUri;
-                this.SecurityLevel = SecurityLevel;
-            }
-        }
-
-        public class ContentFilterElement
-        {
-            public FilterOperator Operator { get; protected set; }
-
-            public FilterOperand[] Operands { get; protected set; }
-
-            public ContentFilterElement(FilterOperator Operator, FilterOperand[] Operands)
-            {
-                this.Operator = Operator;
-                this.Operands = Operands;
-            }
-        }
-
-        public abstract class MonitoringFilter { }
-
-        public class EventFilter : MonitoringFilter
-        {
-            public SimpleAttributeOperand[] SelectClauses { get; protected set; }
-            public ContentFilterElement[] ContentFilters { get; protected set; }
-
-            public EventFilter(SimpleAttributeOperand[] SelectClauses, ContentFilterElement[] ContentFilters)
-            {
-                this.SelectClauses = SelectClauses;
-                this.ContentFilters = ContentFilters;
-            }
-        }
-
-        public class DataChangeFilter : MonitoringFilter
-        {
-            public DataChangeTrigger Trigger { get; protected set; }
-            public DeadbandType DeadbandType { get; protected set; }
-            public double DeadbandValue { get; protected set; }
-
-            public DataChangeFilter(DataChangeTrigger trigger, DeadbandType deadbandType, double deadbandValue)
-            {
-                this.Trigger = trigger;
-                this.DeadbandType = deadbandType;
-                this.DeadbandValue = deadbandValue;
-            }
-        }
-
-        public class MonitoringParameters
-        {
-            public UInt32 ClientHandle { get; protected set; }
-            public double SamplingInterval { get; protected set; }
-            public MonitoringFilter Filter { get; protected set; }
-            public UInt32 QueueSize { get; protected set; }
-            public bool DiscardOldest { get; protected set; }
-
-            public MonitoringParameters(UInt32 ClientHandle, double SamplingInterval, MonitoringFilter Filter, UInt32 QueueSize, bool DiscardOldest)
-            {
-                this.ClientHandle = ClientHandle;
-                this.SamplingInterval = SamplingInterval;
-                this.Filter = Filter;
-                this.QueueSize = QueueSize;
-                this.DiscardOldest = DiscardOldest;
-            }
-        }
-
-        public class MonitoredItemCreateRequest
-        {
-            public ReadValueId ItemToMonitor
-            {
-                get; protected set;
-            }
-
-            public MonitoringMode Mode
-            {
-                get; protected set;
-            }
-
-            public MonitoringParameters RequestedParameters
-            {
-                get; protected set;
-            }
-
-            public MonitoredItemCreateRequest(ReadValueId ItemToMonitor, MonitoringMode Mode, MonitoringParameters RequestedParameters)
-            {
-                this.ItemToMonitor = ItemToMonitor;
-                this.Mode = Mode;
-                this.RequestedParameters = RequestedParameters;
-            }
-        }
-
-        public class MonitoredItemCreateResult : MonitoredItemModifyResult
-        {
-            public UInt32 MonitoredItemId { get; protected set; }
-
-            public MonitoredItemCreateResult(StatusCode StatusCode, UInt32 MonitoredItemId, double RevisedSamplingInterval, UInt32 RevisedQueueSize, ExtensionObject Filter)
-                : base(StatusCode, RevisedSamplingInterval, RevisedQueueSize, Filter)
-            {
-                this.MonitoredItemId = MonitoredItemId;
-            }
-        }
-
-        public class MonitoredItemModifyResult
-        {
-            public StatusCode StatusCode { get; protected set; }
-            public double RevisedSamplingInterval { get; protected set; }
-            public UInt32 RevisedQueueSize { get; protected set; }
-            public ExtensionObject Filter { get; protected set; }
-
-            public MonitoredItemModifyResult(StatusCode StatusCode, double RevisedSamplingInterval, UInt32 RevisedQueueSize, ExtensionObject Filter)
-            {
-                this.StatusCode = StatusCode;
-                this.RevisedSamplingInterval = RevisedSamplingInterval;
-                this.RevisedQueueSize = RevisedQueueSize;
-                this.Filter = Filter;
-            }
-        }
-
-        public class MonitoredItemModifyRequest
-        {
-            public UInt32 MonitoredItemId { get; protected set; }
-            public MonitoringParameters Parameters { get; protected set; }
-
-            public MonitoredItemModifyRequest(UInt32 MonitoredItemId, MonitoringParameters Parameters)
-            {
-                this.MonitoredItemId = MonitoredItemId;
-                this.Parameters = Parameters;
-            }
-        }
-
-        public class RequestHeader
-        {
-            public NodeId AuthToken { get; set; }
-            public DateTime Timestamp { get; set; }
-            public uint RequestHandle { get; set; }
-            public uint ReturnDiagnostics { get; set; }
-            public string AuditEntryId { get; set; }
-            public uint TimeoutHint { get; set; }
-            public ExtensionObject AdditionalHeader { get; set; }
-
-            // Current parameters at receive time
-            public uint SecurityRequestID { get; set; }
-            public uint SecuritySequenceNum { get; set; }
-            public uint SecurityTokenID { get; set; }
-        }
-
-        public class ResponseHeader
-        {
-            public DateTimeOffset Timestamp { get; set; }
-            public uint RequestHandle { get; set; }
-            public uint ServiceResult { get; set; }
-            public byte ServiceDiagnosticsMask { get; set; }
-            public string[] StringTable { get; set; }
-            public ExtensionObject AdditionalHeader { get; set; }
-
-            public ResponseHeader()
-            {
-            }
-
-            public ResponseHeader(RequestHeader req)
-            {
-                Timestamp = req.Timestamp;
-                RequestHandle = req.RequestHandle;
-            }
-        }
-
-        public class TLConfiguration
-        {
-
-            public uint ProtocolVersion, RecvBufferSize, SendBufferSize, MaxMessageSize, MaxChunkCount;
-        }
-
-        public class TLConnection
-        {
-            public TLConfiguration LocalConfig { get; set; }
-            public TLConfiguration RemoteConfig { get; set; }
-
-            public string RemoteEndpoint { get; set; }
-        }
-
-        public class EventNotification
-        {
-            public class Field
-            {
-                public SimpleAttributeOperand Operand;
-                public object Value;
-            }
-
-            public Field[] Fields { get; set; }
-
-            public EventNotification(Field[] Fields)
-            {
-                this.Fields = Fields;
-            }
-        }
-
-        public class MonitoredItem
-        {
-            // Approximate because of lockless queue
-            public const int MaxQueueSize = 1024;
-
-            public int QueueSize;
-
-            public UInt32 MonitoredItemId;
-            public ReadValueId ItemToMonitor;
-            public MonitoringMode Mode;
-            public MonitoringParameters Parameters;
-
-            public ConcurrentQueue<DataValue> QueueData;
-            public bool QueueOverflowed;
-
-            public Subscription ParentSubscription;
-
-            public ConcurrentQueue<EventNotification> QueueEvent;
-            public SimpleAttributeOperand[] FilterSelectClauses
-            {
-                get
-                {
-                    if (Parameters.Filter is EventFilter eventFiler)
-                    {
-                        return eventFiler.SelectClauses;
-                    }
-
-                    return null;
-                }
-            }
-
-            public MonitoredItem(Subscription ParentSubscription)
-            {
-                this.ParentSubscription = ParentSubscription;
-
-                this.QueueData = new ConcurrentQueue<DataValue>();
-                this.QueueEvent = new ConcurrentQueue<EventNotification>();
-
-                QueueOverflowed = false;
-            }
-        }
-
-        public class Subscription
-        {
-            public enum ChangeNotificationType
-            {
-                // Only publish keep-alive
-                None = 0,
-                // Notification with next publication cycle
-                AtPublish,
-                // Notification with forced publish cycle interval = 0
-                Immediate,
-            };
-
-            public ChangeNotificationType ChangeNotification;
-
-            public UInt32 SubscriptionId, LifetimeCount, MaxKeepAliveCount, MaxNotificationsPerPublish;
-            public UInt32 SequenceNumber;
-
-            public double PublishingInterval;
-            public bool PublishingEnabled;
-            public byte Priority;
-
-            public DateTime PublishPreviousTime;
-            public TimeSpan PublishInterval, PublishKeepAliveInterval;
-
-            public Dictionary<UInt32, MonitoredItem> MonitoredItems;
-
-            public Subscription()
-            {
-                SubscriptionId = UInt32.MaxValue;
-                PublishingEnabled = false;
-                SequenceNumber = 1;
-
-                PublishingInterval = 0;
-                LifetimeCount = 0;
-                MaxKeepAliveCount = 0;
-                MaxNotificationsPerPublish = 0;
-
-                PublishPreviousTime = DateTime.MinValue;
-                PublishInterval = TimeSpan.Zero;
-                PublishKeepAliveInterval = TimeSpan.Zero;
-
-                Priority = 0;
-
-                ChangeNotification = ChangeNotificationType.None;
-                MonitoredItems = new Dictionary<uint, MonitoredItem>();
-            }
-        }
-
-        public class SLSequence
-        {
-            // UA_SecureConversationMessageHeader SecureConversationMessageHeader;
-            // UA_SymmetricAlgorithmSecurityHeader SymmetricAlgorithmSecurityHeader;
-            public uint SequenceNumber { get; set; }
-            public uint RequestId { get; set; }
-        }
-
-        public class SLChannel
-        {
-            public class Keyset
-            {
-                public byte[] SymSignKey { get; protected set; }
-                public byte[] SymEncKey { get; protected set; }
-                public byte[] SymIV { get; protected set; }
-
-                public Keyset(byte[] SymSignKey, byte[] SymEncKey, byte[] SymIV)
-                {
-                    this.SymSignKey = SymSignKey;
-                    this.SymEncKey = SymEncKey;
-                    this.SymIV = SymIV;
-                }
-
-                public Keyset()
-                {
-                    this.SymSignKey = null;
-                    this.SymEncKey = null;
-                    this.SymIV = null;
-                }
-            }
-
-            public int ID { get; set; }
-            public ConnectionState SLState { get; set; }
-
-            public X509Certificate2 RemoteCertificate { get; set; }
-            public byte[] RemoteCertificateString { get; set; }
-
-            public object Session { get; set; }
-
-            public TLConnection TL { get; set; }
-            public IPEndPoint Endpoint { get; set; }
-
-            public SLSequence LocalSequence { get; set; }
-            public SLSequence RemoteSequence { get; set; }
-            public SecurityPolicy SecurityPolicy { get; set; }
-            public MessageSecurityMode MessageSecurityMode { get; set; }
-
-            public uint ChannelID { get; set; }
-            public uint TokenID { get; set; }
-            public UInt32 TokenLifetime { get; set; }
-            public DateTimeOffset TokenCreatedAt { get; set; }
-
-            public uint? PrevChannelID { get; set; }
-            public uint? PrevTokenID { get; set; }
-
-            public NodeId AuthToken { get; set; }
-            public NodeId SessionIdToken { get; set; }
-
-            public byte[] LocalNonce { get; set; }
-            public byte[] RemoteNonce { get; set; }
-            public byte[] SessionIssuedNonce { get; set; }
-
-            public Keyset[] LocalKeysets { get; set; }
-            public Keyset[] RemoteKeysets { get; set; }
-        }
-
-        public class AddNodesItem
-        {
-            public NodeId ParentNodeId { get; set; }
-            public NodeId ReferenceTypeId { get; set; }
-            public NodeId RequestedNewNodeId { get; set; }
-            public QualifiedName BrowseName { get; set; }
-            public NodeClass NodeClass { get; set; }
-            public ExtensionObject NodeAttributes { get; set; }
-            public NodeId TypeDefinition { get; set; }
-        }
-
-        public class AddNodesResult
-        {
-            public StatusCode StatusCode { get; }
-
-            public NodeId AddedNodeId { get; }
-
-            public AddNodesResult(StatusCode statusCode, NodeId addedNodeId)
-            {
-                StatusCode = statusCode;
-                AddedNodeId = addedNodeId;
-            }
-        }
-
-        public class ObjectAttributes
-        {
-            public NodeAttributesMask SpecifiedAttributes { get; set; }
-            public LocalizedText DisplayName { get; set; }
-            public LocalizedText Description { get; set; }
-            public uint WriteMask { get; set; }
-            public uint UserWriteMask { get; set; }
-            public byte EventNotifier { get; set; }
-
-            public ObjectAttributes()
-            {
-                SpecifiedAttributes = NodeAttributesMask.DisplayName
-                                            | NodeAttributesMask.Description
-                                            | NodeAttributesMask.WriteMask
-                                            | NodeAttributesMask.UserWriteMask
-                                            | NodeAttributesMask.EventNotifier;
-            }
-        }
-
-        public class ObjectTypeAttributes
-        {
-            public NodeAttributesMask SpecifiedAttributes { get; set; }
-            public LocalizedText DisplayName { get; set; }
-            public LocalizedText Description { get; set; }
-            public uint WriteMask { get; set; }
-            public uint UserWriteMask { get; set; }
-            public bool IsAbstract { get; set; }
-
-            public ObjectTypeAttributes()
-            {
-                SpecifiedAttributes = NodeAttributesMask.DisplayName
-                                            | NodeAttributesMask.Description
-                                            | NodeAttributesMask.WriteMask
-                                            | NodeAttributesMask.UserWriteMask
-                                            | NodeAttributesMask.IsAbstract;
-            }
-        }
-
-        public class VariableAttributes
-        {
-            public NodeAttributesMask SpecifiedAttributes { get; set; }
-            public LocalizedText DisplayName { get; set; }
-            public LocalizedText Description { get; set; }
-            public uint WriteMask { get; set; }
-            public uint UserWriteMask { get; set; }
-            public object Value { get; set; }
-            public NodeId DataType { get; set; }
-            public int ValueRank { get; set; }
-            public uint[] ArrayDimensions { get; set; }
-            public byte AccessLevel { get; set; }
-            public byte UserAccessLevel { get; set; }
-            public double MinimumSamplingInterval { get; set; }
-            public bool Historizing { get; set; }
-
-            public VariableAttributes()
-            {
-                SpecifiedAttributes = NodeAttributesMask.DisplayName
-                    | NodeAttributesMask.Description
-                    | NodeAttributesMask.WriteMask
-                    | NodeAttributesMask.UserWriteMask
-                    | NodeAttributesMask.Value
-                    | NodeAttributesMask.DataType
-                    | NodeAttributesMask.ValueRank
-                    | NodeAttributesMask.ArrayDimensions
-                    | NodeAttributesMask.AccessLevel
-                    | NodeAttributesMask.UserAccessLevel
-                    | NodeAttributesMask.MinimumSamplingInterval
-                    | NodeAttributesMask.Historizing;
-
-                Description = new LocalizedText("");
-                DisplayName = new LocalizedText("");
-                WriteMask = 0;
-                UserWriteMask = 0;
-                Value = 0;
-                DataType = new NodeId(0, 0);
-                ValueRank = 0;
-                ArrayDimensions = new uint[0];
-                AccessLevel = 0;
-                UserAccessLevel = 0;
-                MinimumSamplingInterval = 0;
-                Historizing = false;
-            }
-        }
-
-        public class VariableTypeAttributes
-        {
-            public NodeAttributesMask SpecifiedAttributes { get; set; }
-            public LocalizedText DisplayName { get; set; }
-            public LocalizedText Description { get; set; }
-            public uint WriteMask { get; set; }
-            public uint UserWriteMask { get; set; }
-            public object Value { get; set; }
-            public NodeId DataType { get; set; }
-            public int ValueRank { get; set; }
-            public uint[] ArrayDimensions { get; set; }
-            public bool IsAbstract { get; set; }
-
-            public VariableTypeAttributes()
-            {
-                // 2112
-                SpecifiedAttributes = NodeAttributesMask.DisplayName
-                    | NodeAttributesMask.Description
-                    | NodeAttributesMask.WriteMask
-                    | NodeAttributesMask.UserWriteMask
-                    | NodeAttributesMask.Value
-                    | NodeAttributesMask.DataType
-                    | NodeAttributesMask.ValueRank
-                    | NodeAttributesMask.ArrayDimensions
-                    | NodeAttributesMask.IsAbstract;
-
-                Description = new LocalizedText("");
-                DisplayName = new LocalizedText("");
-                WriteMask = 0;
-                UserWriteMask = 0;
-                Value = 0;
-                DataType = new NodeId(0, 0);
-                ValueRank = 0;
-                ArrayDimensions = new uint[0];
-                IsAbstract = false;
-            }
-
-        }
-
-        public class DeleteNodesItem
-        {
-            public NodeId NodeId { get; }
-            public Boolean DeleteTargetReferences { get; }
-
-            public DeleteNodesItem(NodeId nodeId, bool deleteTargetReferences)
-            {
-                NodeId = nodeId;
-                DeleteTargetReferences = deleteTargetReferences;
-            }
-        }
-
-        public class AddReferencesItem
-        {
-            public NodeId SourceNodeId { get; set; }
-
-            public NodeId ReferenceTypeId { get; set; }
-
-            public Boolean IsForward { get; set; }
-
-            public String TargetServerUri { get; set; }
-
-            public NodeId TargetNodeId { get; set; }
-
-            public NodeClass TargetNodeClass { get; set; }
-        }
-
-        public class DeleteReferencesItem
-        {
-            public NodeId SourceNodeId { get; set; }
-
-            public NodeId ReferenceTypeId { get; set; }
-
-            public Boolean IsForward { get; set; }
-
-            public NodeId TargetNodeId { get; set; }
-
-            public Boolean DeleteBidirectional { get; set; }
-        }
-
-        public class Argument
-        {
-            public string Name { get; }
-            public NodeId DataType { get; }
-            public int ValueRank { get; }
-            public uint[] ArrayDimensions { get; }
-            public LocalizedText Description { get; }
-
-            public Argument(string name, NodeId dataType, int valueRank, uint[] arrayDimensions, LocalizedText description)
-            {
-                Name = name;
-                DataType = dataType;
-                ValueRank = valueRank;
-                ArrayDimensions = arrayDimensions;
-                Description = description;
-            }
+            this.StatusCode = StatusCode;
+            this.Results = Results;
+            this.Outputs = Outputs;
         }
     }
+
+    public class ReferenceNode
+    {
+        public NodeId ReferenceType
+        {
+            get; protected set;
+        }
+
+        public NodeId Target
+        {
+            get; protected set;
+        }
+
+        public bool IsInverse
+        {
+            get; protected set;
+        }
+
+        public override string ToString()
+        {
+            return string.Format("[{0}] {1} {2}",
+                ReferenceType.ToString(),
+                IsInverse ? "<-" : "->",
+                Target.ToString());
+        }
+
+        public ReferenceNode(NodeId ReferenceType, NodeId Target, bool IsInverse)
+        {
+            this.ReferenceType = ReferenceType;
+            this.Target = Target;
+            this.IsInverse = IsInverse;
+        }
+    }
+
+    public class BrowseDescription
+    {
+        public NodeId Id { get; protected set; }
+        public BrowseDirection Direction { get; protected set; }
+        public NodeId ReferenceType { get; protected set; }
+        public bool IncludeSubtypes { get; protected set; }
+        public UInt32 NodeClassMask { get; protected set; }
+        public BrowseResultMask ResultMask { get; protected set; }
+
+        public BrowseDescription(NodeId Id, BrowseDirection Direction, NodeId ReferenceType, bool IncludeSubtypes, UInt32 NodeClassMask, BrowseResultMask ResultMask)
+        {
+            this.Id = Id;
+            this.Direction = Direction;
+            this.ReferenceType = ReferenceType;
+            this.IncludeSubtypes = IncludeSubtypes;
+            this.NodeClassMask = NodeClassMask;
+            this.ResultMask = ResultMask;
+        }
+    }
+
+    public class BrowseResult
+    {
+        public UInt32 StatusCode { get; protected set; }
+        public byte[] ContinuationPoint { get; protected set; }
+        public ReferenceDescription[] Refs { get; protected set; }
+
+        public BrowseResult(UInt32 StatusCode, byte[] ContinuationPoint, ReferenceDescription[] Refs)
+        {
+            this.StatusCode = StatusCode;
+            this.ContinuationPoint = ContinuationPoint;
+            this.Refs = Refs;
+        }
+    }
+
+    //public class ContinuationPointBrowse
+    //{
+    //	public bool IsValid
+    //	{
+    //		get; protected set;
+    //	}
+
+    //	public int Offset
+    //	{
+    //		get; protected set;
+    //	}
+
+    //	public int RequestedMaxReferencesPerNode
+    //	{
+    //		get; protected set;
+    //	}
+
+    //	public BrowseDescription Desc
+    //	{
+    //		get; protected set;
+    //	}
+
+    //	public ContinuationPointBrowse(bool IsValid, int Offset, int RequestedMaxReferencesPerNode, BrowseDescription Desc)
+    //	{
+    //		this.IsValid = IsValid;
+    //		this.Offset = Offset;
+    //		this.RequestedMaxReferencesPerNode = RequestedMaxReferencesPerNode;
+    //		this.Desc = Desc;
+    //	}
+    //}
+
+    public struct BrowsePathTarget
+    {
+        public NodeId Target;
+        public UInt32 RemainingPathIndex;
+    }
+
+    public class RelativePathElement
+    {
+        public NodeId ReferenceTypeId
+        {
+            get; protected set;
+        }
+
+        public bool IsInverse
+        {
+            get; protected set;
+        }
+
+        public bool IncludeSubtypes
+        {
+            get; protected set;
+        }
+
+        public QualifiedName TargetName
+        {
+            get; protected set;
+        }
+
+        public RelativePathElement(NodeId ReferenceTypeId, bool IsInverse, bool IncludeSubtypes, QualifiedName TargetName)
+        {
+            this.ReferenceTypeId = ReferenceTypeId;
+            this.IsInverse = IsInverse;
+            this.IncludeSubtypes = IncludeSubtypes;
+            this.TargetName = TargetName;
+        }
+    }
+
+    public class BrowsePath
+    {
+        public NodeId StartingNode
+        {
+            get; protected set;
+        }
+
+        public RelativePathElement[] RelativePath
+        {
+            get; protected set;
+        }
+
+        public BrowsePath(NodeId StartingNode, RelativePathElement[] RelativePath)
+        {
+            this.StartingNode = StartingNode;
+            this.RelativePath = RelativePath;
+        }
+    }
+
+    public class BrowsePathResult
+    {
+        public StatusCode StatusCode
+        {
+            get; protected set;
+        }
+
+        public BrowsePathTarget[] Targets
+        {
+            get; protected set;
+        }
+
+        public BrowsePathResult(StatusCode StatusCode, BrowsePathTarget[] Targets)
+        {
+            this.StatusCode = StatusCode;
+            this.Targets = Targets;
+        }
+    }
+
+    public class ReferenceDescription
+    {
+        public NodeId ReferenceTypeId
+        {
+            get; protected set;
+        }
+
+        public bool IsForward
+        {
+            get; protected set;
+        }
+
+        public NodeId TargetId
+        {
+            get; protected set;
+        }
+
+        public QualifiedName BrowseName
+        {
+            get; protected set;
+        }
+
+        public LocalizedText DisplayName
+        {
+            get; protected set;
+        }
+
+        public NodeClass NodeClass
+        {
+            get; protected set;
+        }
+
+        public NodeId TypeDefinition
+        {
+            get; protected set;
+        }
+
+        public ReferenceDescription(NodeId ReferenceTypeId, bool IsForward, NodeId TargetId, QualifiedName BrowseName, LocalizedText DisplayName, NodeClass NodeClass, NodeId TypeDefinition)
+        {
+            this.ReferenceTypeId = ReferenceTypeId;
+            this.IsForward = IsForward;
+            this.TargetId = TargetId;
+            this.BrowseName = BrowseName;
+            this.DisplayName = DisplayName;
+            this.NodeClass = NodeClass;
+            this.TypeDefinition = TypeDefinition;
+        }
+    }
+
+    public class ApplicationDescription
+    {
+        public string ApplicationUri
+        {
+            get; protected set;
+        }
+
+        public string ProductUri
+        {
+            get; protected set;
+        }
+
+        public LocalizedText ApplicationName
+        {
+            get; protected set;
+        }
+
+        public ApplicationType Type
+        {
+            get; protected set;
+        }
+
+        public string GatewayServerUri
+        {
+            get; protected set;
+        }
+
+        public string DiscoveryProfileUri
+        {
+            get; protected set;
+        }
+
+        public string[] DiscoveryUrls
+        {
+            get; protected set;
+        }
+
+        public ApplicationDescription(string ApplicationUri, string ProductUri, LocalizedText ApplicationName, ApplicationType Type, string GatewayServerUri, string DiscoveryProfileUri, string[] DiscoveryUrls)
+        {
+            this.ApplicationUri = ApplicationUri;
+            this.ProductUri = ProductUri;
+            this.ApplicationName = ApplicationName;
+            this.Type = Type;
+            this.GatewayServerUri = GatewayServerUri;
+            this.DiscoveryProfileUri = DiscoveryProfileUri;
+            this.DiscoveryUrls = DiscoveryUrls;
+        }
+    }
+
+    public class UserTokenPolicy
+    {
+        public string PolicyId
+        {
+            get; protected set;
+        }
+
+        public UserTokenType TokenType
+        {
+            get; protected set;
+        }
+
+        public string IssuedTokenType
+        {
+            get; protected set;
+        }
+
+        public string IssuerEndpointUrl
+        {
+            get; protected set;
+        }
+
+        public string SecurityPolicyUri
+        {
+            get; protected set;
+        }
+
+        public UserTokenPolicy(string PolicyId, UserTokenType TokenType, string IssuedTokenType, string IssuerEndpointUrl, string SecurityPolicyUri)
+        {
+            this.PolicyId = PolicyId;
+            this.TokenType = TokenType;
+            this.IssuedTokenType = IssuedTokenType;
+            this.IssuerEndpointUrl = IssuerEndpointUrl;
+            this.SecurityPolicyUri = SecurityPolicyUri;
+        }
+    }
+
+    public class EndpointDescription
+    {
+        public string EndpointUrl
+        {
+            get; protected set;
+        }
+
+        public ApplicationDescription Server
+        {
+            get; protected set;
+        }
+
+        public byte[] ServerCertificate
+        {
+            get; protected set;
+        }
+
+        public MessageSecurityMode SecurityMode
+        {
+            get; protected set;
+        }
+
+        public string SecurityPolicyUri
+        {
+            get; protected set;
+        }
+
+        public UserTokenPolicy[] UserIdentityTokens
+        {
+            get; protected set;
+        }
+
+        public string TransportProfileUri
+        {
+            get; protected set;
+        }
+
+        public byte SecurityLevel
+        {
+            get; protected set;
+        }
+
+        public EndpointDescription(string EndpointUrl, ApplicationDescription Server, byte[] ServerCertificate, MessageSecurityMode SecurityMode, string SecurityPolicyUri, UserTokenPolicy[] UserIdentityTokens, string TransportProfileUri, byte SecurityLevel)
+        {
+            this.EndpointUrl = EndpointUrl;
+            this.Server = Server;
+            this.ServerCertificate = ServerCertificate;
+            this.SecurityMode = SecurityMode;
+            this.SecurityPolicyUri = SecurityPolicyUri;
+            this.UserIdentityTokens = UserIdentityTokens;
+            this.TransportProfileUri = TransportProfileUri;
+            this.SecurityLevel = SecurityLevel;
+        }
+    }
+
+    public class ContentFilterElement
+    {
+        public FilterOperator Operator { get; protected set; }
+
+        public FilterOperand[] Operands { get; protected set; }
+
+        public ContentFilterElement(FilterOperator Operator, FilterOperand[] Operands)
+        {
+            this.Operator = Operator;
+            this.Operands = Operands;
+        }
+    }
+
+    public abstract class MonitoringFilter { }
+
+    public class EventFilter : MonitoringFilter
+    {
+        public SimpleAttributeOperand[] SelectClauses { get; protected set; }
+        public ContentFilterElement[] ContentFilters { get; protected set; }
+
+        public EventFilter(SimpleAttributeOperand[] SelectClauses, ContentFilterElement[] ContentFilters)
+        {
+            this.SelectClauses = SelectClauses;
+            this.ContentFilters = ContentFilters;
+        }
+    }
+
+    public class DataChangeFilter : MonitoringFilter
+    {
+        public DataChangeTrigger Trigger { get; protected set; }
+        public DeadbandType DeadbandType { get; protected set; }
+        public double DeadbandValue { get; protected set; }
+
+        public DataChangeFilter(DataChangeTrigger trigger, DeadbandType deadbandType, double deadbandValue)
+        {
+            this.Trigger = trigger;
+            this.DeadbandType = deadbandType;
+            this.DeadbandValue = deadbandValue;
+        }
+    }
+
+    public class MonitoringParameters
+    {
+        public UInt32 ClientHandle { get; protected set; }
+        public double SamplingInterval { get; protected set; }
+        public MonitoringFilter Filter { get; protected set; }
+        public UInt32 QueueSize { get; protected set; }
+        public bool DiscardOldest { get; protected set; }
+
+        public MonitoringParameters(UInt32 ClientHandle, double SamplingInterval, MonitoringFilter Filter, UInt32 QueueSize, bool DiscardOldest)
+        {
+            this.ClientHandle = ClientHandle;
+            this.SamplingInterval = SamplingInterval;
+            this.Filter = Filter;
+            this.QueueSize = QueueSize;
+            this.DiscardOldest = DiscardOldest;
+        }
+    }
+
+    public class MonitoredItemCreateRequest
+    {
+        public ReadValueId ItemToMonitor
+        {
+            get; protected set;
+        }
+
+        public MonitoringMode Mode
+        {
+            get; protected set;
+        }
+
+        public MonitoringParameters RequestedParameters
+        {
+            get; protected set;
+        }
+
+        public MonitoredItemCreateRequest(ReadValueId ItemToMonitor, MonitoringMode Mode, MonitoringParameters RequestedParameters)
+        {
+            this.ItemToMonitor = ItemToMonitor;
+            this.Mode = Mode;
+            this.RequestedParameters = RequestedParameters;
+        }
+    }
+
+    public class MonitoredItemCreateResult : MonitoredItemModifyResult
+    {
+        public UInt32 MonitoredItemId { get; protected set; }
+
+        public MonitoredItemCreateResult(StatusCode StatusCode, UInt32 MonitoredItemId, double RevisedSamplingInterval, UInt32 RevisedQueueSize, ExtensionObject Filter)
+            : base(StatusCode, RevisedSamplingInterval, RevisedQueueSize, Filter)
+        {
+            this.MonitoredItemId = MonitoredItemId;
+        }
+    }
+
+    public class MonitoredItemModifyResult
+    {
+        public StatusCode StatusCode { get; protected set; }
+        public double RevisedSamplingInterval { get; protected set; }
+        public UInt32 RevisedQueueSize { get; protected set; }
+        public ExtensionObject Filter { get; protected set; }
+
+        public MonitoredItemModifyResult(StatusCode StatusCode, double RevisedSamplingInterval, UInt32 RevisedQueueSize, ExtensionObject Filter)
+        {
+            this.StatusCode = StatusCode;
+            this.RevisedSamplingInterval = RevisedSamplingInterval;
+            this.RevisedQueueSize = RevisedQueueSize;
+            this.Filter = Filter;
+        }
+    }
+
+    public class MonitoredItemModifyRequest
+    {
+        public UInt32 MonitoredItemId { get; protected set; }
+        public MonitoringParameters Parameters { get; protected set; }
+
+        public MonitoredItemModifyRequest(UInt32 MonitoredItemId, MonitoringParameters Parameters)
+        {
+            this.MonitoredItemId = MonitoredItemId;
+            this.Parameters = Parameters;
+        }
+    }
+
+    public class RequestHeader
+    {
+        public NodeId AuthToken { get; set; }
+        public DateTime Timestamp { get; set; }
+        public uint RequestHandle { get; set; }
+        public uint ReturnDiagnostics { get; set; }
+        public string AuditEntryId { get; set; }
+        public uint TimeoutHint { get; set; }
+        public ExtensionObject AdditionalHeader { get; set; }
+
+        // Current parameters at receive time
+        public uint SecurityRequestID { get; set; }
+        public uint SecuritySequenceNum { get; set; }
+        public uint SecurityTokenID { get; set; }
+    }
+
+    public class ResponseHeader
+    {
+        public DateTimeOffset Timestamp { get; set; }
+        public uint RequestHandle { get; set; }
+        public uint ServiceResult { get; set; }
+        public byte ServiceDiagnosticsMask { get; set; }
+        public string[] StringTable { get; set; }
+        public ExtensionObject AdditionalHeader { get; set; }
+
+        public ResponseHeader()
+        {
+        }
+
+        public ResponseHeader(RequestHeader req)
+        {
+            Timestamp = req.Timestamp;
+            RequestHandle = req.RequestHandle;
+        }
+    }
+
+    public class TLConfiguration
+    {
+
+        public uint ProtocolVersion, RecvBufferSize, SendBufferSize, MaxMessageSize, MaxChunkCount;
+    }
+
+    public class TLConnection
+    {
+        public TLConfiguration LocalConfig { get; set; }
+        public TLConfiguration RemoteConfig { get; set; }
+
+        public string RemoteEndpoint { get; set; }
+    }
+
+    public class EventNotification
+    {
+        public class Field
+        {
+            public SimpleAttributeOperand Operand;
+            public object Value;
+        }
+
+        public Field[] Fields { get; set; }
+
+        public EventNotification(Field[] Fields)
+        {
+            this.Fields = Fields;
+        }
+    }
+
+    public class MonitoredItem
+    {
+        // Approximate because of lockless queue
+        public const int MaxQueueSize = 1024;
+
+        public int QueueSize;
+
+        public UInt32 MonitoredItemId;
+        public ReadValueId ItemToMonitor;
+        public MonitoringMode Mode;
+        public MonitoringParameters Parameters;
+
+        public ConcurrentQueue<DataValue> QueueData;
+        public bool QueueOverflowed;
+
+        public Subscription ParentSubscription;
+
+        public ConcurrentQueue<EventNotification> QueueEvent;
+        public SimpleAttributeOperand[] FilterSelectClauses
+        {
+            get
+            {
+                if (Parameters.Filter is EventFilter eventFiler)
+                {
+                    return eventFiler.SelectClauses;
+                }
+
+                return null;
+            }
+        }
+
+        public MonitoredItem(Subscription ParentSubscription)
+        {
+            this.ParentSubscription = ParentSubscription;
+
+            this.QueueData = new ConcurrentQueue<DataValue>();
+            this.QueueEvent = new ConcurrentQueue<EventNotification>();
+
+            QueueOverflowed = false;
+        }
+    }
+
+    public class Subscription
+    {
+        public enum ChangeNotificationType
+        {
+            // Only publish keep-alive
+            None = 0,
+            // Notification with next publication cycle
+            AtPublish,
+            // Notification with forced publish cycle interval = 0
+            Immediate,
+        };
+
+        public ChangeNotificationType ChangeNotification;
+
+        public UInt32 SubscriptionId, LifetimeCount, MaxKeepAliveCount, MaxNotificationsPerPublish;
+        public UInt32 SequenceNumber;
+
+        public double PublishingInterval;
+        public bool PublishingEnabled;
+        public byte Priority;
+
+        public DateTime PublishPreviousTime;
+        public TimeSpan PublishInterval, PublishKeepAliveInterval;
+
+        public Dictionary<UInt32, MonitoredItem> MonitoredItems;
+
+        public Subscription()
+        {
+            SubscriptionId = UInt32.MaxValue;
+            PublishingEnabled = false;
+            SequenceNumber = 1;
+
+            PublishingInterval = 0;
+            LifetimeCount = 0;
+            MaxKeepAliveCount = 0;
+            MaxNotificationsPerPublish = 0;
+
+            PublishPreviousTime = DateTime.MinValue;
+            PublishInterval = TimeSpan.Zero;
+            PublishKeepAliveInterval = TimeSpan.Zero;
+
+            Priority = 0;
+
+            ChangeNotification = ChangeNotificationType.None;
+            MonitoredItems = new Dictionary<uint, MonitoredItem>();
+        }
+    }
+
+    public class SLSequence
+    {
+        // UA_SecureConversationMessageHeader SecureConversationMessageHeader;
+        // UA_SymmetricAlgorithmSecurityHeader SymmetricAlgorithmSecurityHeader;
+        public uint SequenceNumber { get; set; }
+        public uint RequestId { get; set; }
+    }
+
+    public class SLChannel
+    {
+        public class Keyset
+        {
+            public byte[] SymSignKey { get; protected set; }
+            public byte[] SymEncKey { get; protected set; }
+            public byte[] SymIV { get; protected set; }
+
+            public Keyset(byte[] SymSignKey, byte[] SymEncKey, byte[] SymIV)
+            {
+                this.SymSignKey = SymSignKey;
+                this.SymEncKey = SymEncKey;
+                this.SymIV = SymIV;
+            }
+
+            public Keyset()
+            {
+                this.SymSignKey = null;
+                this.SymEncKey = null;
+                this.SymIV = null;
+            }
+        }
+
+        public int ID { get; set; }
+        public ConnectionState SLState { get; set; }
+
+        public X509Certificate2 RemoteCertificate { get; set; }
+        public byte[] RemoteCertificateString { get; set; }
+
+        public object Session { get; set; }
+
+        public TLConnection TL { get; set; }
+        public IPEndPoint Endpoint { get; set; }
+
+        public SLSequence LocalSequence { get; set; }
+        public SLSequence RemoteSequence { get; set; }
+        public SecurityPolicy SecurityPolicy { get; set; }
+        public MessageSecurityMode MessageSecurityMode { get; set; }
+
+        public uint ChannelID { get; set; }
+        public uint TokenID { get; set; }
+        public UInt32 TokenLifetime { get; set; }
+        public DateTimeOffset TokenCreatedAt { get; set; }
+
+        public uint? PrevChannelID { get; set; }
+        public uint? PrevTokenID { get; set; }
+
+        public NodeId AuthToken { get; set; }
+        public NodeId SessionIdToken { get; set; }
+
+        public byte[] LocalNonce { get; set; }
+        public byte[] RemoteNonce { get; set; }
+        public byte[] SessionIssuedNonce { get; set; }
+
+        public Keyset[] LocalKeysets { get; set; }
+        public Keyset[] RemoteKeysets { get; set; }
+    }
+
+    public class AddNodesItem
+    {
+        public NodeId ParentNodeId { get; set; }
+        public NodeId ReferenceTypeId { get; set; }
+        public NodeId RequestedNewNodeId { get; set; }
+        public QualifiedName BrowseName { get; set; }
+        public NodeClass NodeClass { get; set; }
+        public ExtensionObject NodeAttributes { get; set; }
+        public NodeId TypeDefinition { get; set; }
+    }
+
+    public class AddNodesResult
+    {
+        public StatusCode StatusCode { get; }
+
+        public NodeId AddedNodeId { get; }
+
+        public AddNodesResult(StatusCode statusCode, NodeId addedNodeId)
+        {
+            StatusCode = statusCode;
+            AddedNodeId = addedNodeId;
+        }
+    }
+
+    public class ObjectAttributes
+    {
+        public NodeAttributesMask SpecifiedAttributes { get; set; }
+        public LocalizedText DisplayName { get; set; }
+        public LocalizedText Description { get; set; }
+        public uint WriteMask { get; set; }
+        public uint UserWriteMask { get; set; }
+        public byte EventNotifier { get; set; }
+
+        public ObjectAttributes()
+        {
+            SpecifiedAttributes = NodeAttributesMask.DisplayName
+                                        | NodeAttributesMask.Description
+                                        | NodeAttributesMask.WriteMask
+                                        | NodeAttributesMask.UserWriteMask
+                                        | NodeAttributesMask.EventNotifier;
+        }
+    }
+
+    public class ObjectTypeAttributes
+    {
+        public NodeAttributesMask SpecifiedAttributes { get; set; }
+        public LocalizedText DisplayName { get; set; }
+        public LocalizedText Description { get; set; }
+        public uint WriteMask { get; set; }
+        public uint UserWriteMask { get; set; }
+        public bool IsAbstract { get; set; }
+
+        public ObjectTypeAttributes()
+        {
+            SpecifiedAttributes = NodeAttributesMask.DisplayName
+                                        | NodeAttributesMask.Description
+                                        | NodeAttributesMask.WriteMask
+                                        | NodeAttributesMask.UserWriteMask
+                                        | NodeAttributesMask.IsAbstract;
+        }
+    }
+
+    public class VariableAttributes
+    {
+        public NodeAttributesMask SpecifiedAttributes { get; set; }
+        public LocalizedText DisplayName { get; set; }
+        public LocalizedText Description { get; set; }
+        public uint WriteMask { get; set; }
+        public uint UserWriteMask { get; set; }
+        public object Value { get; set; }
+        public NodeId DataType { get; set; }
+        public int ValueRank { get; set; }
+        public uint[] ArrayDimensions { get; set; }
+        public byte AccessLevel { get; set; }
+        public byte UserAccessLevel { get; set; }
+        public double MinimumSamplingInterval { get; set; }
+        public bool Historizing { get; set; }
+
+        public VariableAttributes()
+        {
+            SpecifiedAttributes = NodeAttributesMask.DisplayName
+                | NodeAttributesMask.Description
+                | NodeAttributesMask.WriteMask
+                | NodeAttributesMask.UserWriteMask
+                | NodeAttributesMask.Value
+                | NodeAttributesMask.DataType
+                | NodeAttributesMask.ValueRank
+                | NodeAttributesMask.ArrayDimensions
+                | NodeAttributesMask.AccessLevel
+                | NodeAttributesMask.UserAccessLevel
+                | NodeAttributesMask.MinimumSamplingInterval
+                | NodeAttributesMask.Historizing;
+
+            Description = new LocalizedText("");
+            DisplayName = new LocalizedText("");
+            WriteMask = 0;
+            UserWriteMask = 0;
+            Value = 0;
+            DataType = new NodeId(0, 0);
+            ValueRank = 0;
+            ArrayDimensions = new uint[0];
+            AccessLevel = 0;
+            UserAccessLevel = 0;
+            MinimumSamplingInterval = 0;
+            Historizing = false;
+        }
+    }
+
+    public class VariableTypeAttributes
+    {
+        public NodeAttributesMask SpecifiedAttributes { get; set; }
+        public LocalizedText DisplayName { get; set; }
+        public LocalizedText Description { get; set; }
+        public uint WriteMask { get; set; }
+        public uint UserWriteMask { get; set; }
+        public object Value { get; set; }
+        public NodeId DataType { get; set; }
+        public int ValueRank { get; set; }
+        public uint[] ArrayDimensions { get; set; }
+        public bool IsAbstract { get; set; }
+
+        public VariableTypeAttributes()
+        {
+            // 2112
+            SpecifiedAttributes = NodeAttributesMask.DisplayName
+                | NodeAttributesMask.Description
+                | NodeAttributesMask.WriteMask
+                | NodeAttributesMask.UserWriteMask
+                | NodeAttributesMask.Value
+                | NodeAttributesMask.DataType
+                | NodeAttributesMask.ValueRank
+                | NodeAttributesMask.ArrayDimensions
+                | NodeAttributesMask.IsAbstract;
+
+            Description = new LocalizedText("");
+            DisplayName = new LocalizedText("");
+            WriteMask = 0;
+            UserWriteMask = 0;
+            Value = 0;
+            DataType = new NodeId(0, 0);
+            ValueRank = 0;
+            ArrayDimensions = new uint[0];
+            IsAbstract = false;
+        }
+
+    }
+
+    public class DeleteNodesItem
+    {
+        public NodeId NodeId { get; }
+        public Boolean DeleteTargetReferences { get; }
+
+        public DeleteNodesItem(NodeId nodeId, bool deleteTargetReferences)
+        {
+            NodeId = nodeId;
+            DeleteTargetReferences = deleteTargetReferences;
+        }
+    }
+
+    public class AddReferencesItem
+    {
+        public NodeId SourceNodeId { get; set; }
+
+        public NodeId ReferenceTypeId { get; set; }
+
+        public Boolean IsForward { get; set; }
+
+        public String TargetServerUri { get; set; }
+
+        public NodeId TargetNodeId { get; set; }
+
+        public NodeClass TargetNodeClass { get; set; }
+    }
+
+    public class DeleteReferencesItem
+    {
+        public NodeId SourceNodeId { get; set; }
+
+        public NodeId ReferenceTypeId { get; set; }
+
+        public Boolean IsForward { get; set; }
+
+        public NodeId TargetNodeId { get; set; }
+
+        public Boolean DeleteBidirectional { get; set; }
+    }
+
+    public class Argument
+    {
+        public string Name { get; }
+        public NodeId DataType { get; }
+        public int ValueRank { get; }
+        public uint[] ArrayDimensions { get; }
+        public LocalizedText Description { get; }
+
+        public Argument(string name, NodeId dataType, int valueRank, uint[] arrayDimensions, LocalizedText description)
+        {
+            Name = name;
+            DataType = dataType;
+            ValueRank = valueRank;
+            ArrayDimensions = arrayDimensions;
+            Description = description;
+        }
+    }
+}
 }

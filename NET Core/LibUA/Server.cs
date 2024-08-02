@@ -26,7 +26,7 @@ namespace LibUA
             private ManualResetEvent listenerAccepted = null;
             private ManualResetEvent listenerAbort = null;
             private Semaphore listenerAvailable = null;
-            private readonly List<NetDispatcherBase> dispatchers = null;
+            public readonly List<NetDispatcherBase> dispatchers = null;
             private readonly object dispatchersLock = new object();
 
             public Master(Application App, int Port, int Timeout, int Backlog, int MaxClients, ILogger logger, int MaximumMessageSize = 1 << 20)
